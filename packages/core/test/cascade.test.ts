@@ -17,6 +17,7 @@ import {
 const b64 = (label: string, bytes = 32) => Buffer.from(`${label}:${"x".repeat(bytes)}`).toString("base64");
 const uri = (data: string) => `data:image/png;base64,${data}`;
 const anthropic = (data: string) => ({ type: "image", source: { type: "base64", media_type: "image/png", data } });
+const anthropicDocument = (data: string) => ({ type: "document", source: { type: "base64", media_type: "application/pdf", data } });
 const chatObj = (data: string) => ({ type: "image_url", image_url: { url: uri(data) } });
 const chatStr = (data: string) => ({ type: "image_url", image_url: uri(data) });
 const responses = (data: string) => ({ type: "input_image", image_url: uri(data) });
@@ -26,12 +27,17 @@ const payload = (older: unknown, current?: unknown) => ({ messages: [
   { role: "user", content: [{ type: "text", text: "now" }, ...(current ? [current] : [])] },
 ] });
 
-const [anthropicMatcher, openaiChatMatcher, openaiResponsesMatcher] = builtinMatchers;
+const [anthropicMatcher, anthropicDocumentBlockMatcher, openaiChatMatcher, openaiResponsesMatcher] = builtinMatchers;
 
 describe("A. Block matcher tests", () => {
   test("anthropic_base64_block_matched", () => {
     const data = b64("anthropic");
     expect(anthropicMatcher!.match(anthropic(data))?.identity).toEqual(imageIdentity(data));
+  });
+
+  test("anthropic_document_block_matched", () => {
+    const data = b64("anthropic-document");
+    expect(anthropicDocumentBlockMatcher!.match(anthropicDocument(data))?.identity).toEqual(imageIdentity(data));
   });
 
   test("openai_chat_image_url_object_matched", () => {
@@ -52,6 +58,17 @@ describe("A. Block matcher tests", () => {
 
   test("near_miss_blocks_not_matched", () => {
     for (const bad of [{ type: "image" }, { type: "image_url", image_url: 42 }, { type: "input_image", image_url: 42 }, { type: "image", source: { type: "url", data: b64("bad") } }]) {
+      expect(builtinMatchers.some((m) => m.match(bad))).toBe(false);
+    }
+  });
+
+  test("document_near_miss_not_matched", () => {
+    for (const bad of [
+      { type: "document" },
+      { type: "document", source: { type: "url", data: b64("doc-bad") } },
+      { type: "document", source: { type: "base64", data: 42 } },
+      { type: "document", source: { type: "base64", data: "" } },
+    ]) {
       expect(builtinMatchers.some((m) => m.match(bad))).toBe(false);
     }
   });
@@ -92,6 +109,17 @@ describe("B. Classification & cascade behavior", () => {
     expect((first.messages[0]!.content[0] as { type: string }).type).toBe("image");
     const second = { messages: [{ role: "user", content: [anthropic(data)] }] };
     expect(cascadeImages(second, { strategy: strategy() }).telemetry.downgraded).toBe(1);
+  });
+
+  test("document_historical_downgraded_positional", () => {
+    const old = b64("doc-old");
+    const now = b64("doc-now");
+    const p = payload(anthropicDocument(old), anthropicDocument(now));
+    const result = cascadeImages(p);
+    expect(result.telemetry.downgraded).toBe(1);
+    expect(result.telemetry.current).toBe(1);
+    expect((p.messages[0]!.content[1] as { type: string }).type).toBe("text");
+    expect((p.messages[2]!.content[1] as { type: string }).type).toBe("document");
   });
 
   test("positional_after_last_user_message_is_current", () => {
@@ -159,6 +187,12 @@ describe("C. Placeholder & cache stability", () => {
     const text = defaultPlaceholder({ hash: "abcdef1234567890", shortHash: "abcdef123456" });
     expect(text).toMatchSnapshot();
     expect(text).toBe("[Image abcdef123456 omitted from this provider request: it appeared in an earlier turn. Use the prior image summary in the conversation unless the user explicitly asks to inspect the original image again.]");
+  });
+
+  test("document_placeholder_snapshot_frozen", () => {
+    const text = defaultPlaceholder({ hash: "abcdef1234567890", shortHash: "abcdef123456" }, { type: "document" });
+    expect(text).toMatchSnapshot();
+    expect(text).toBe("[Document abcdef123456 omitted from this provider request: it appeared in an earlier turn. Use the prior document summary in the conversation unless the user explicitly asks to inspect the original document again.]");
   });
 
   test("custom_placeholder_determinism_enforced", () => {

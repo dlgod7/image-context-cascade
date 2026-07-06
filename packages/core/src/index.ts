@@ -15,14 +15,16 @@ export function imageIdentity(data: string, hasher: (data: string) => string = s
 export { sha256Hex };
 export const builtinMatchers = createBuiltinMatchers(sha256Hex);
 export const anthropicMatcher = builtinMatchers[0]!;
-export const openaiChatMatcher = builtinMatchers[1]!;
-export const openaiResponsesMatcher = builtinMatchers[2]!;
+export const anthropicDocumentMatcher = builtinMatchers[1]!;
+export const openaiChatMatcher = builtinMatchers[2]!;
+export const openaiResponsesMatcher = builtinMatchers[3]!;
 
 export { defaultPlaceholder } from "./placeholder";
 export { InMemoryTracker } from "./tracker";
 export { positionalStrategy } from "./classify/positionalStrategy";
 export { trackerStrategy } from "./classify/trackerStrategy";
 export { createBuiltinMatchers } from "./blocks/create";
+export { anthropicDocumentMatcher as createAnthropicDocumentMatcher } from "./blocks/anthropicDocument";
 export { parseDataUri } from "./blocks/dataUri";
 export type {
   BlockMatcher,

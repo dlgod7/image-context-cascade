@@ -1,0 +1,61 @@
+{
+  "name": "anthropic_document_positional_historical",
+  "description": "Anthropic base64 document historical block is downgraded and current document is retained",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "old document"
+          },
+          {
+            "type": "document",
+            "source": {
+              "type": "base64",
+              "media_type": "application/pdf",
+              "data": "Y29ycC1kb2Mtb2xk"
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "seen"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "now"
+          },
+          {
+            "type": "document",
+            "source": {
+              "type": "base64",
+              "media_type": "application/pdf",
+              "data": "Y29ycC1kb2Mtbm93"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional"
+  },
+  "expect": {
+    "mutated": true,
+    "current": 1,
+    "downgraded": 1,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": false
+  }
+}

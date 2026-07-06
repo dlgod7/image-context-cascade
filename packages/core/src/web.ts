@@ -6,6 +6,7 @@ export { InMemoryTracker } from "./tracker";
 export { positionalStrategy } from "./classify/positionalStrategy";
 export { trackerStrategy } from "./classify/trackerStrategy";
 export { createBuiltinMatchers } from "./blocks/create";
+export { anthropicDocumentMatcher as createAnthropicDocumentMatcher } from "./blocks/anthropicDocument";
 export { parseDataUri } from "./blocks/dataUri";
 export { imageIdentity } from "./identity";
 export type {

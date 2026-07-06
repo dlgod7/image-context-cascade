@@ -99,3 +99,21 @@ Validation evidence:
   - `@image-cascade/conformance@0.1.0`: 12 files, dist + corpus + package metadata only.
   - `@image-cascade/cli@0.1.0`: 2 files, `dist/main.js` + package metadata only.
 - Local git baseline created with commit message `chore: initial commit - image-context-cascade v0.1.0`; no remote configured or pushed.
+
+## Anthropic document block support (2026-07-06)
+
+- Added Anthropic base64 document matching for blocks shaped like `{ type: "document", source: { type: "base64", data } }`, with non-empty string data, media type left unrestricted, O(1) size estimation, and replacement to `{ type: "text", text }`.
+- Added a document-specific default placeholder while preserving the existing image placeholder text byte-for-byte.
+- Registered the document matcher in `createBuiltinMatchers` / main-entry `builtinMatchers`, and exported the document matcher factory for direct use.
+- Added unit coverage for document matching, near misses, document placeholder snapshot, and positional historical downgrade/current retention.
+- Added conformance corpus case `anthropic_document_positional_historical.json`; corpus JSON count is now 7.
+- Updated `docs/pattern.md` Replacement model with the single Anthropic document replacement line.
+- Rebuilt dist outputs; `packages/core/dist/blocks/anthropicDocument.*` is present.
+
+Validation evidence:
+
+- `bun run build`: completed successfully for core, conformance, and CLI.
+- `bun test`: 44 pass / 0 fail / 2 snapshots / 138 expect calls across 3 files; `placeholder_snapshot_frozen` passed and snapshot diff only adds `document_placeholder_snapshot_frozen`.
+- `bun run typecheck`: build plus `tsc --noEmit -p tsconfig.json` completed with zero TypeScript errors.
+- Corpus count: `corpus_json_count 7`.
+- Node dist document smoke: `document dist smoke downgraded=1 type=text`.

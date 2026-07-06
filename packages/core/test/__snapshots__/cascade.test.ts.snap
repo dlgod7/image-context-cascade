@@ -1,3 +1,5 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`C. Placeholder & cache stability placeholder_snapshot_frozen 1`] = `"[Image abcdef123456 omitted from this provider request: it appeared in an earlier turn. Use the prior image summary in the conversation unless the user explicitly asks to inspect the original image again.]"`;
+
+exports[`C. Placeholder & cache stability document_placeholder_snapshot_frozen 1`] = `"[Document abcdef123456 omitted from this provider request: it appeared in an earlier turn. Use the prior document summary in the conversation unless the user explicitly asks to inspect the original document again.]"`;

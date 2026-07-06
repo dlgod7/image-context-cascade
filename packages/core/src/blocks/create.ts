@@ -1,6 +1,7 @@
 import type { BlockMatcher, ImageIdentity } from "../types";
 import { imageIdentity } from "../identity";
 import { imageIdentityInputFromUri, parseDataUri } from "./dataUri";
+import { anthropicDocumentMatcher } from "./anthropicDocument";
 
 const ENVELOPE_CHARS = 96;
 
@@ -43,6 +44,7 @@ export function createBuiltinMatchers(hasher: (data: string) => string): BlockMa
       },
       replace(_block: unknown, text: string) { return { type: "text", text }; },
     },
+    anthropicDocumentMatcher(hasher),
     {
       formatId: "openai-chat",
       match(block: unknown) {

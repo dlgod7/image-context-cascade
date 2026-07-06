@@ -156,6 +156,7 @@ The default text is stable for the same input identity and contains no timestamp
 Built-in provider matchers replace blocks as follows:
 
 - Anthropic image blocks become `{ type: "text", text }`.
+- Anthropic document (base64) blocks become { type: 'text', text } with a document placeholder.
 - OpenAI Chat `image_url` blocks become `{ type: "text", text }`.
 - OpenAI Responses `input_image` blocks become `{ type: "input_text", text }`.
 
