@@ -1,5 +1,7 @@
 # image-context-cascade
 
+English | [简体中文](README.zh-CN.md)
+
 **Request-level image lifecycle middleware for AI coding agents: keep current-turn images, downgrade historical ones to stable placeholders — before they hit your token bill, your prompt cache, or a 413.**
 
 Zero runtime dependencies. Framework-agnostic core. Works with Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses payload shapes.
@@ -55,6 +57,17 @@ const { payload, mutated, telemetry } = cascadeImages(requestPayload);
 
 That's the default **positional strategy**: images at or after the last user message are current; everything earlier is downgraded. It is stateless — safe across restarts, and correct for proxies that see each request fresh.
 
+## Rescue an oversized session (CLI)
+
+For agents without a request-construction hook — Claude Code included — the CLI rewrites bloated session files offline:
+
+```bash
+npx @image-cascade/cli rescue path/to/session.jsonl        # dry-run: shows what would be saved
+npx @image-cascade/cli rescue path/to/session.jsonl --yes  # backs up the original, then rewrites
+```
+
+Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. Measured on a real 381-line Claude Code session: **6.26 MB → 1.36 MB (−78%)**, 35 historical attachments downgraded, every line still valid JSON, current-turn content untouched.
+
 ## How it works
 
 ```
@@ -67,7 +80,7 @@ That's the default **positional strategy**: images at or after the last user mes
                                               img C (current turn) → sent intact
 ```
 
-1. **Find** — walk the payload; match image blocks per provider format (Anthropic base64 blocks, OpenAI Chat `image_url`, OpenAI Responses `input_image`, data URIs).
+1. **Find** — walk the payload; match image blocks per provider format (Anthropic base64 blocks, OpenAI Chat `image_url`, OpenAI Responses `input_image`, data URIs), plus Anthropic base64 `document` attachments (e.g. PDFs), which cause the same historical-resend problem.
 2. **Classify** — each image is `current`, `historical`, or `unknown`, via a pluggable strategy.
 3. **Replace** — historical images become a deterministic placeholder carrying a 12-char content hash. Same image, same bytes, every request — that's what keeps your prompt cache alive.
 4. **Report** — telemetry with counts, per-format stats, and estimated savings. No base64, ever.
@@ -118,13 +131,13 @@ New provider format? Implement a `BlockMatcher` (`match(block)` / `replace(block
 
 - If your workflow requires the model to re-examine original pixels across many turns (e.g. pixel-perfect visual diffing), downgrading historical images will hurt — keep those sessions short or retain images (custom strategy) until lifecycle policies land in v0.2.
 - The model can no longer "look again" at a downgraded image on its own; the placeholder instructs it to ask the user to re-attach. Automatic re-inspection needs the source store planned for a later release.
-- Closed agents without request-construction hooks (e.g. Claude Code today) cannot use the middleware directly; see the transcript rescue CLI on the roadmap.
+- Closed agents without request-construction hooks (e.g. Claude Code today) cannot run the middleware in-process; use the [rescue CLI](#rescue-an-oversized-session-cli) to rewrite session files offline instead.
 - Exact-duplicate detection only: the same image re-encoded or resized hashes differently (perceptual hashing is future research).
 
 ## Roadmap
 
-- **v0.1 (this release)** — core with positional + tracker strategies, three built-in provider matchers, Pi reference adapter, conformance harness, verified benchmarks.
-- **v0.2** — transcript rescue CLI (offline rewrite of image-bloated session files — first aid for sessions that compaction can no longer save); request-proxy integration (zero-adapter path built on the positional strategy); lifecycle policies (`retain` / `ephemeral` / `summarize` / `drop`); image summary store (placeholders carry a compact description inline); official OpenAI / Anthropic SDK middleware adapters.
+- **v0.1 (this release)** — core with positional + tracker strategies, built-in matchers for three provider image formats plus Anthropic document attachments, session rescue CLI, Pi reference adapter, conformance harness with a language-neutral corpus, verified benchmarks.
+- **v0.2** — request-proxy integration (zero-adapter path built on the positional strategy); lifecycle policies (`retain` / `ephemeral` / `summarize` / `drop`); image summary store (placeholders carry a compact description inline); official OpenAI / Anthropic SDK middleware adapters.
 - **Future research** — perceptual hashing for near-duplicate images; source store + on-demand re-inspection tool; persistent cross-session trackers with safe privacy defaults.
 
 ## Prior art & acknowledgements

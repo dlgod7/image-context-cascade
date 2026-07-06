@@ -21,12 +21,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/image-context-cascade/image-context-cascade.git",
+    "url": "https://github.com/dlgod7/image-context-cascade.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/image-context-cascade/image-context-cascade#readme",
+  "homepage": "https://github.com/dlgod7/image-context-cascade#readme",
   "bugs": {
-    "url": "https://github.com/image-context-cascade/image-context-cascade/issues"
+    "url": "https://github.com/dlgod7/image-context-cascade/issues"
   },
   "keywords": [
     "llm",

@@ -6,3 +6,5 @@ packages/*/dist/
 *.icc-tmp-*
 .*.icc-tmp-*
 .DS_Store
+
+.flymd/
