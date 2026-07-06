@@ -1,5 +1,5 @@
 {
-  "name": "image-context-cascade-cli",
+  "name": "@image-cascade/cli",
   "version": "0.1.0",
   "type": "module",
   "license": "Apache-2.0",
@@ -16,6 +16,7 @@
     "dist"
   ],
   "publishConfig": {
+    "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
   "sideEffects": false,

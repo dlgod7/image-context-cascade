@@ -266,7 +266,7 @@ Hosts may add separate summarization behavior, but that behavior is outside this
 
 A conforming implementation should demonstrate the invariants with executable tests, not only with documentation.
 
-The repository provides `image-context-cascade-conformance` for adapter-level checks and a language-neutral JSON corpus under `packages/conformance/corpus/`.
+The repository provides `@image-cascade/conformance` for adapter-level checks and a language-neutral JSON corpus under `packages/conformance/corpus/`.
 
 The core test suite also covers matcher behavior, classification, placeholder stability, telemetry privacy, traversal limits, and benchmark guardrails.
 
@@ -285,7 +285,7 @@ Important named tests and corpus cases include:
 - `tracker_current_hash_retained.json`, covering explicit current-image retention in tracker mode.
 - `nested_boundary_regression.json`, covering positional boundary safety in nested transcript-like data.
 
-Adapter authors should run `bun test`, `bun run typecheck`, and an adapter harness through `runConformance` from `image-context-cascade-conformance`.
+Adapter authors should run `bun test`, `bun run typecheck`, and an adapter harness through `runConformance` from `@image-cascade/conformance`.
 
 ## Why this belongs at request time
 

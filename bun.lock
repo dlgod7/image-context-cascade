@@ -17,7 +17,7 @@
       },
     },
     "packages/cli": {
-      "name": "image-context-cascade-cli",
+      "name": "@image-cascade/cli",
       "version": "0.1.0",
       "bin": {
         "image-cascade": "dist/main.js",
@@ -27,7 +27,7 @@
       },
     },
     "packages/conformance": {
-      "name": "image-context-cascade-conformance",
+      "name": "@image-cascade/conformance",
       "version": "0.1.0",
       "dependencies": {
         "image-context-cascade": "0.1.0",
@@ -39,6 +39,10 @@
     },
   },
   "packages": {
+    "@image-cascade/cli": ["@image-cascade/cli@workspace:packages/cli"],
+
+    "@image-cascade/conformance": ["@image-cascade/conformance@workspace:packages/conformance"],
+
     "@image-cascade/pi-adapter": ["@image-cascade/pi-adapter@workspace:packages/adapters/pi"],
 
     "@types/bun": ["@types/bun@1.3.14", "https://registry.npmmirror.com/@types/bun/-/bun-1.3.14.tgz", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
@@ -48,10 +52,6 @@
     "bun-types": ["bun-types@1.3.14", "https://registry.npmmirror.com/bun-types/-/bun-types-1.3.14.tgz", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
     "image-context-cascade": ["image-context-cascade@workspace:packages/core"],
-
-    "image-context-cascade-cli": ["image-context-cascade-cli@workspace:packages/cli"],
-
-    "image-context-cascade-conformance": ["image-context-cascade-conformance@workspace:packages/conformance"],
 
     "typescript": ["typescript@5.9.3", "https://registry.npmmirror.com/typescript/-/typescript-5.9.3.tgz", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
