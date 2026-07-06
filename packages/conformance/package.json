@@ -1,0 +1,46 @@
+{
+  "name": "@image-cascade/conformance",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Conformance suite and corpus for image-context-cascade adapters.",
+  "main": "./dist/suite.js",
+  "types": "./dist/suite.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/suite.d.ts",
+      "default": "./dist/suite.js"
+    },
+    "./corpus/*": "./corpus/*"
+  },
+  "files": [
+    "dist",
+    "corpus"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/image-context-cascade/image-context-cascade.git",
+    "directory": "packages/conformance"
+  },
+  "homepage": "https://github.com/image-context-cascade/image-context-cascade#readme",
+  "bugs": {
+    "url": "https://github.com/image-context-cascade/image-context-cascade/issues"
+  },
+  "keywords": [
+    "llm",
+    "agent",
+    "context",
+    "image",
+    "middleware",
+    "conformance",
+    "corpus"
+  ],
+  "dependencies": {
+    "image-context-cascade": "workspace:*"
+  },
+  "devDependencies": {}
+}

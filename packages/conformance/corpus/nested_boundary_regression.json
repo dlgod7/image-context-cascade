@@ -1,0 +1,78 @@
+{
+  "name": "nested_boundary_regression",
+  "description": "Nested transcript must not move top-level current boundary",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "old"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "bmVzdGVkLW9sZA=="
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "tool"
+          },
+          {
+            "transcript": [
+              {
+                "role": "user",
+                "content": [
+                  {
+                    "type": "image",
+                    "source": {
+                      "type": "base64",
+                      "media_type": "image/png",
+                      "data": "bmVzdGVkLWlubmVyLWN1cnJlbnQ="
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "now"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "bmVzdGVkLW5vdw=="
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional"
+  },
+  "expect": {
+    "mutated": true,
+    "current": 2,
+    "downgraded": 1,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": true
+  }
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+packages/*/dist/
+*.icc-backup
+*.icc-backup.*
+*.icc-tmp-*
+.*.icc-tmp-*
+.DS_Store

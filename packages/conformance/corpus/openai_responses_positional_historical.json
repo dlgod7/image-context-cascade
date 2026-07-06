@@ -1,0 +1,53 @@
+{
+  "name": "openai_responses_positional_historical",
+  "description": "OpenAI responses input_image downgraded",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "old"
+          },
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,Y29ycC1yZXNwLW9sZA=="
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "now"
+          },
+          {
+            "type": "input_image",
+            "image_url": "data:image/png;base64,Y29ycC1yZXNwLW5vdw=="
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional"
+  },
+  "expect": {
+    "mutated": true,
+    "current": 1,
+    "downgraded": 1,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": true
+  }
+}

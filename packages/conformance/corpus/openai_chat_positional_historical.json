@@ -1,0 +1,57 @@
+{
+  "name": "openai_chat_positional_historical",
+  "description": "OpenAI chat image_url object downgraded",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "old"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/png;base64,Y29ycC1jaGF0LW9sZA=="
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "now"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "data:image/png;base64,Y29ycC1jaGF0LW5vdw=="
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional"
+  },
+  "expect": {
+    "mutated": true,
+    "current": 1,
+    "downgraded": 1,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": true
+  }
+}

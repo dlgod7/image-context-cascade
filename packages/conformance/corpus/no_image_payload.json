@@ -1,0 +1,27 @@
+{
+  "name": "no_image_payload",
+  "description": "Payload without image blocks remains untouched",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "hello"
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional"
+  },
+  "expect": {
+    "mutated": false,
+    "current": 0,
+    "downgraded": 0,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": true
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "name": "anthropic_positional_historical",
+  "description": "Anthropic historical image downgraded, current retained",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "old"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "Y29ycC1hbnRoLW9sZA=="
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "now"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "Y29ycC1hbnRoLW5vdw=="
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional"
+  },
+  "expect": {
+    "mutated": true,
+    "current": 1,
+    "downgraded": 1,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": true
+  }
+}

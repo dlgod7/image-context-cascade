@@ -1,0 +1,44 @@
+{
+  "name": "@image-cascade/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Rescue CLI for oversized image-context-cascade session files.",
+  "bin": {
+    "image-cascade": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "default": "./dist/main.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/image-context-cascade/image-context-cascade.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/image-context-cascade/image-context-cascade#readme",
+  "bugs": {
+    "url": "https://github.com/image-context-cascade/image-context-cascade/issues"
+  },
+  "keywords": [
+    "llm",
+    "agent",
+    "context",
+    "image",
+    "middleware",
+    "cli",
+    "rescue"
+  ],
+  "dependencies": {
+    "image-context-cascade": "workspace:*"
+  },
+  "devDependencies": {}
+}

@@ -1,0 +1,12 @@
+{
+  "name": "@image-cascade/pi-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "exports": "./src/index.ts",
+  "dependencies": {
+    "image-context-cascade": "workspace:*"
+  },
+  "devDependencies": {}
+}

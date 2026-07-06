@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun test
+      - run: bun run build
+
+  node-dist-smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: core dist smoke
+        run: |
+          node --input-type=module -e "import { cascadeImages } from './packages/core/dist/index.js'; const data=Buffer.from('ci-smoke').toString('base64'); const p={messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/png',data}}]},{role:'user',content:[{type:'text',text:'now'}]}]}; const r=cascadeImages(p); if(r.telemetry.downgraded < 1) throw new Error(JSON.stringify(r.telemetry)); console.log('core dist smoke downgraded='+r.telemetry.downgraded);"
+      - name: cli dist smoke
+        run: node packages/cli/dist/main.js rescue --help

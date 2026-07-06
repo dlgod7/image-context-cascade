@@ -1,0 +1,47 @@
+{
+  "name": "image-context-cascade",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "description": "Image context cascade middleware for LLM and agent message payloads.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./web": {
+      "types": "./dist/web.d.ts",
+      "default": "./dist/web.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/image-context-cascade/image-context-cascade.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/image-context-cascade/image-context-cascade#readme",
+  "bugs": {
+    "url": "https://github.com/image-context-cascade/image-context-cascade/issues"
+  },
+  "keywords": [
+    "llm",
+    "agent",
+    "context",
+    "image",
+    "middleware",
+    "prompt-cache",
+    "vision",
+    "cascade"
+  ],
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,23 @@
+{
+  "name": "image-context-cascade-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/conformance",
+    "packages/adapters/pi",
+    "packages/cli"
+  ],
+  "scripts": {
+    "build": "bun run build:core && bun run build:conformance && bun run build:cli",
+    "build:core": "tsc -p packages/core/tsconfig.build.json && node scripts/fix-dist-imports.mjs packages/core/dist",
+    "build:conformance": "tsc -p packages/conformance/tsconfig.build.json && node scripts/fix-dist-imports.mjs packages/conformance/dist",
+    "build:cli": "node scripts/build-cli.mjs",
+    "test": "bun test",
+    "typecheck": "bun run build && tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.9.2"
+  }
+}

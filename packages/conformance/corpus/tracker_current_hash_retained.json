@@ -1,0 +1,34 @@
+{
+  "name": "tracker_current_hash_retained",
+  "description": "Tracker strategy retains explicitly current image",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "dHJhY2tlci1jdXJyZW50"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "tracker",
+    "currentHashesOf": [
+      "messages.0.content.0"
+    ]
+  },
+  "expect": {
+    "mutated": false,
+    "current": 1,
+    "downgraded": 0,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": true
+  }
+}
