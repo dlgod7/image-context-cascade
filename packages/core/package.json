@@ -19,13 +19,16 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=18"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dlgod7/image-context-cascade.git",
+    "url": "git+https://github.com/dlgod7/image-context-cascade.git",
     "directory": "packages/core"
   },
   "homepage": "https://github.com/dlgod7/image-context-cascade#readme",

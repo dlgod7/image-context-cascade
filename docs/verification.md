@@ -217,7 +217,7 @@ It also checks that downgraded placeholders are stable when applicable.
 
 A new adapter should pass both project validation and an adapter harness.
 
-Use `runConformance(adapterHarness)` from `@image-cascade/conformance`.
+Use `runConformance(adapterHarness)` from `image-context-cascade-conformance`.
 
 The harness should simulate two turns:
 

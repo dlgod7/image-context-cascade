@@ -61,8 +61,8 @@ const { payload, mutated, telemetry } = cascadeImages(requestPayload);
 对没有请求构造钩子的 agent——包括 Claude Code——CLI 可以离线重写膨胀的 session 文件：
 
 ```bash
-npx @image-cascade/cli rescue path/to/session.jsonl        # dry-run：展示能省多少
-npx @image-cascade/cli rescue path/to/session.jsonl --yes  # 先备份原文件，再重写
+npx image-context-cascade-cli rescue path/to/session.jsonl        # dry-run：展示能省多少
+npx image-context-cascade-cli rescue path/to/session.jsonl --yes  # 先备份原文件，再重写
 ```
 
 两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。真实 381 行 Claude Code session 实测：**6.26 MB → 1.36 MB（−78%）**，35 个历史附件被降级，每一行仍是合法 JSON，当前轮内容一字未动。
@@ -117,7 +117,7 @@ Adapter 是宿主钩子与 core 之间的胶水——[Pi 参考 adapter](package
 2. 可选：在轮次开始时记录当前轮图片 hash，改用 `trackerStrategy`。
 3. 把 `telemetry` 发到宿主的日志——它在类型构造上就是安全的（不存在能装图片数据的字段）。
 
-要支持新的 provider 格式？实现一个 `BlockMatcher`（`match(block)` / `replace(block, text)`），通过 `formats` 传入即可。**不要**自己重新实现分类、占位符或遍历——行为漂移就是这么来的。跑一遍 conformance 套件（`@image-cascade/conformance`），验证你的 adapter 保留当前轮图片、降级历史图片、占位符字节稳定、telemetry 零泄漏。
+要支持新的 provider 格式？实现一个 `BlockMatcher`（`match(block)` / `replace(block, text)`），通过 `formats` 传入即可。**不要**自己重新实现分类、占位符或遍历——行为漂移就是这么来的。跑一遍 conformance 套件（`image-context-cascade-conformance`），验证你的 adapter 保留当前轮图片、降级历史图片、占位符字节稳定、telemetry 零泄漏。
 
 ## 隐私与安全保证
 

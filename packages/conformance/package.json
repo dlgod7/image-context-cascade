@@ -1,5 +1,5 @@
 {
-  "name": "@image-cascade/conformance",
+  "name": "image-context-cascade-conformance",
   "version": "0.1.0",
   "type": "module",
   "license": "Apache-2.0",
@@ -17,13 +17,16 @@
     "dist",
     "corpus"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=18"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dlgod7/image-context-cascade.git",
+    "url": "git+https://github.com/dlgod7/image-context-cascade.git",
     "directory": "packages/conformance"
   },
   "homepage": "https://github.com/dlgod7/image-context-cascade#readme",
@@ -40,7 +43,7 @@
     "corpus"
   ],
   "dependencies": {
-    "image-context-cascade": "workspace:*"
+    "image-context-cascade": "0.1.0"
   },
   "devDependencies": {}
 }

@@ -295,7 +295,7 @@ The corpus currently covers:
 Adapter authors can also call the conformance API directly:
 
 ```ts
-import { runConformance } from "@image-cascade/conformance";
+import { runConformance } from "image-context-cascade-conformance";
 import { myAdapterHarness } from "./my-adapter-harness";
 
 const result = await runConformance(myAdapterHarness);
@@ -364,7 +364,7 @@ Before proposing an adapter, verify the following:
 
 ## Instructions for AI implementers
 
-Implement an adapter for the target agent by calling `cascadeImages<T>(payload: T, options?: CascadeOptions): CascadeResult<T>` at the last hook before the provider request is sent. Use the default `positionalStrategy()` unless the host exposes exact current-turn image attachments; in that case create one `InMemoryTracker`, collect current image hashes with `builtinMatchers` or `imageIdentity`, and pass `trackerStrategy({ currentTurnHashes, tracker })`. Forward `result.payload` only when `result.mutated` is true, and log only `result.telemetry`. If adding a provider format, implement a `BlockMatcher` with `match(block)` and `replace(block, text)`, then pass it through `formats`; do not rewrite traversal. Required acceptance commands are `bun test` and `bun run typecheck`, plus an adapter harness using `runConformance` from `@image-cascade/conformance` when the adapter lives outside the core tests. Do not reimplement matcher behavior already covered by `builtinMatchers`, placeholder generation, image classification, identity hashing, traversal, telemetry fields, or the current/unknown/historical safety rules; import the core APIs instead.
+Implement an adapter for the target agent by calling `cascadeImages<T>(payload: T, options?: CascadeOptions): CascadeResult<T>` at the last hook before the provider request is sent. Use the default `positionalStrategy()` unless the host exposes exact current-turn image attachments; in that case create one `InMemoryTracker`, collect current image hashes with `builtinMatchers` or `imageIdentity`, and pass `trackerStrategy({ currentTurnHashes, tracker })`. Forward `result.payload` only when `result.mutated` is true, and log only `result.telemetry`. If adding a provider format, implement a `BlockMatcher` with `match(block)` and `replace(block, text)`, then pass it through `formats`; do not rewrite traversal. Required acceptance commands are `bun test` and `bun run typecheck`, plus an adapter harness using `runConformance` from `image-context-cascade-conformance` when the adapter lives outside the core tests. Do not reimplement matcher behavior already covered by `builtinMatchers`, placeholder generation, image classification, identity hashing, traversal, telemetry fields, or the current/unknown/historical safety rules; import the core APIs instead.
 
 ## Summary
 

@@ -62,8 +62,8 @@ That's the default **positional strategy**: images at or after the last user mes
 For agents without a request-construction hook — Claude Code included — the CLI rewrites bloated session files offline:
 
 ```bash
-npx @image-cascade/cli rescue path/to/session.jsonl        # dry-run: shows what would be saved
-npx @image-cascade/cli rescue path/to/session.jsonl --yes  # backs up the original, then rewrites
+npx image-context-cascade-cli rescue path/to/session.jsonl        # dry-run: shows what would be saved
+npx image-context-cascade-cli rescue path/to/session.jsonl --yes  # backs up the original, then rewrites
 ```
 
 Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. Measured on a real 381-line Claude Code session: **6.26 MB → 1.36 MB (−78%)**, 35 historical attachments downgraded, every line still valid JSON, current-turn content untouched.
@@ -118,7 +118,7 @@ An adapter is the glue between your agent's hooks and the core — the [Pi refer
 2. Optionally, on turn start, record current-turn image hashes and use `trackerStrategy`.
 3. Send `telemetry` wherever your host logs — it is safe by construction (no image data fields exist in its type).
 
-New provider format? Implement a `BlockMatcher` (`match(block)` / `replace(block, text)`) and pass it via `formats`. Do **not** reimplement classification, placeholders, or traversal — that's how behavior drift happens. Run the conformance suite (`@image-cascade/conformance`) to verify your adapter preserves current-turn images, downgrades historical ones, keeps placeholders byte-stable, and leaks nothing into telemetry.
+New provider format? Implement a `BlockMatcher` (`match(block)` / `replace(block, text)`) and pass it via `formats`. Do **not** reimplement classification, placeholders, or traversal — that's how behavior drift happens. Run the conformance suite (`image-context-cascade-conformance`) to verify your adapter preserves current-turn images, downgrades historical ones, keeps placeholders byte-stable, and leaks nothing into telemetry.
 
 ## Privacy & safety guarantees
 

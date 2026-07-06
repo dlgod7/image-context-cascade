@@ -1,11 +1,11 @@
 {
-  "name": "@image-cascade/cli",
+  "name": "image-context-cascade-cli",
   "version": "0.1.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Rescue CLI for oversized image-context-cascade session files.",
   "bin": {
-    "image-cascade": "./dist/main.js"
+    "image-cascade": "dist/main.js"
   },
   "exports": {
     ".": {
@@ -15,13 +15,16 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=18"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/dlgod7/image-context-cascade.git",
+    "url": "git+https://github.com/dlgod7/image-context-cascade.git",
     "directory": "packages/cli"
   },
   "homepage": "https://github.com/dlgod7/image-context-cascade#readme",
@@ -38,7 +41,7 @@
     "rescue"
   ],
   "dependencies": {
-    "image-context-cascade": "workspace:*"
+    "image-context-cascade": "0.1.0"
   },
   "devDependencies": {}
 }
