@@ -35,96 +35,24 @@ Compaction 救不了这个问题，原因是结构性的：**413 在请求离开
 
 - **不是 prompt 技巧。** Prompt 删不掉请求 payload 里的字节；这是中间件。
 - **不是通用上下文压缩。** 它只管理图片，不碰你的文本历史。
-- **不是对所有 agent 自动生效。** 你的 agent 需要一个请求构造钩子。写一个 adapter 约 40–60 行（见 [Pi 参考 adapter](packages/adapters/pi/src/index.ts)）；conformance 套件会告诉你写对了没有。
+- **不是对所有 agent 自动生效。** 每请求全自动需要宿主有请求构造钩子（Pi 有；你自己写的 agent 也有）。没有的宿主退而求其次：会话边界 hook 或 CLI——下面的[分宿主表格](#装好之后日常长什么样分宿主)对哪档是哪档说得很诚实。
 
-## 快速开始
+## 开始使用——丢一句话给你的 agent
 
-```bash
-npm install image-context-cascade
-```
-
-```ts
-import { cascadeImages } from "image-context-cascade";
-
-// 在你的 agent 构造 provider 请求的地方：
-const { payload, mutated, telemetry } = cascadeImages(requestPayload);
-
-// payload：历史图片已替换为稳定占位符，当前轮图片原样保留
-// telemetry：{ found, current, downgraded, estimatedSavedChars, ... }
-//            —— 只有计数和 hash，永远没有图片数据
-```
-
-这就是默认的 **positional 策略**：最后一条 user 消息及其后的图片是当前轮，更早的一律降级。它是无状态的——重启无损，对每次只看到单个请求的代理也同样正确。
-
-## 抢救超大 session（CLI）
-
-对没有请求构造钩子的 agent——包括 Claude Code 和 Codex——CLI 可以离线重写膨胀的 session 文件：
-
-```bash
-npx @image-cascade/cli rescue path/to/session.jsonl                 # dry-run：展示能省多少
-npx @image-cascade/cli rescue path/to/session.jsonl --yes           # 先备份原文件，再重写
-npx @image-cascade/cli rescue path/to/session.jsonl --yes --store   # 同时把被降级的原图存到本地
-
-# 之后：用占位符 hash 找回。
-npx @image-cascade/cli restore a1b2c3d4e5f6 --out restored.png
-```
-
-也可以 `npm install -g @image-cascade/cli` 全局安装——装出来的命令名是 `image-cascade`。
-
-两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 是显式 opt-in，默认把 source store 写到 `~/.image-cascade/store`，也可以传目录（用 `ICC_STORE_DIR` 环境变量可改默认位置）。
-
-Claude Code 还有免操心版本：`image-cascade hook claude-code` 从 stdin 读取 Claude Code 的 hook payload，自动归档该 session 的历史图片——见下面的安装指令。hook 触发的归档永远带 store（全部可找回），且永远不会让 hook 报错；`ICC_DISABLE=1` 可整体关闭。
-
-session 文件的位置：
-
-- **Claude Code**：`~/.claude/projects/<项目>/*.jsonl` —— 真实 381 行 session 实测：**6.26 MB → 1.36 MB（−78%）**，35 个历史附件被降级，每一行仍是合法 JSON。
-- **Codex**：`~/.codex/sessions/<年>/<月>/<日>/rollout-*.jsonl` —— 真实 332 行 rollout 实测：**50.2 MB → 2.26 MB（−95.5%）**。Codex 会把每张生成图以裸 base64 存*两份*（`image_generation_call` 响应项 + `image_generation_end` 事件），所以图片密集的 Codex session 缩得尤其狠。
-
-**不要重写正在打开的 session。** agent 进程可能还在往文件里追加内容。先关掉会话，或者对拷贝件操作。agent 运行期间抢救*其他* session 没有问题。
-
-## 丢给你的 agent 一键搞定（复制即用）
-
-两条指令，各干各的事。**安装配置**把工具接进你 agent 的日常工作流，全程不读任何 session 文件；**体验对比**（可选）拿你已有的 session 量一量能省多少——只有它会碰 session 文件。两条都不预设你用的是哪个 agent：指令会让 agent 自己识别宿主，按宿主真实支持的能力来配。
-
-### 1）安装配置——接进日常工作流（不读任何 session 文件）
+不管你用的是哪个 coding agent，把这段贴给它，它会自己搞定：读取[安装指南](docs/setup/README.md)，识别自己所在的宿主，照着对应的那份配置：
 
 ```text
-为我配置 image-context-cascade，让我的 agent session 不再堆积过期的图片 payload。
-这是纯配置任务：过程中不要读取、列出或改写任何 session/transcript 文件。
-
-1. 先确认你自己运行在哪个 agent 宿主里（Claude Code？Codex？Cursor？还是别的？）。
-   不要照抄下面的例子瞎猜——检查你的真实环境。
-2. 安装 CLI：npm install -g @image-cascade/cli
-   验收：image-cascade --version 能打印版本号。若不允许全局安装，下文的
-   image-cascade 一律改用 `npx @image-cascade/cli`。
-3. 按宿主能力配置最深一层自动化：
-   - Claude Code：把这条合并进 ~/.claude/settings.json 的 hooks.SessionEnd
-     （合并进已有 JSON，绝不整文件覆盖；写入前先给我看 diff）：
-       {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": "image-cascade hook claude-code", "timeout": 60}]}]}}
-     效果：每次会话结束时，该会话的历史图片自动归档成可找回的占位符（附自动
-     .icc-backup 备份），之后 resume 和后续请求都轻装上阵。会话进行中的请求任何
-     外部工具都插不进手——这已经是 Claude Code 今天允许的最深集成。
-   - Codex：Codex 目前没有会话结束 hook，改为在 ~/.codex/AGENTS.md 追加一个带
-     标记的区块（追加，绝不覆盖；保留标记以便日后干净卸载）：
-       <!-- image-context-cascade:start -->
-       ~/.codex/sessions 下的 session 文件会堆积 base64 图片，烧 token。当我提到
-       session 变重变慢时，主动提议：`image-cascade rescue <文件>`（先 dry-run，
-       经我确认后 `--yes --store`）。绝不重写当前打开的 session。形如
-       [Image <hash> omitted; restorable via image-cascade restore <hash>] 的占位符
-       表示原图存在本地——需要回看时执行那条 restore 命令即可。
-       <!-- image-context-cascade:end -->
-   - 其他宿主：检查你的宿主有没有 (a) 请求构造钩子——有则优先用 npm 中间件
-     （`npm install image-context-cascade`，见 Quick start）；或 (b) 会传 transcript
-     路径的会话生命周期钩子——有则把 CLI 挂上去；或 (c) 都没有——那就记下
-     `npx @image-cascade/cli rescue <文件>` 可手动使用，并仿照上面 Codex 区块往你
-     宿主的指令文件（AGENTS.md 或等价物）里加一段说明。
-4. 汇报：你到底改了什么、改在哪、如何撤销（删除那条 hook / 那个标记区块），并说明
-   ICC_DISABLE=1 是关闭一切 hook 自动处理的总开关。
+Read and follow https://raw.githubusercontent.com/dlgod7/image-context-cascade/main/docs/setup/README.md
+— identify which agent host YOU are running in, then apply the guide for YOUR host
+(Pi / Claude Code / Codex / generic). This is configuration only: do NOT read, list,
+or rewrite any session/transcript files. When done, report what you changed and how to undo it.
 ```
 
-### 2）体验对比（可选）——拿已有 session 量一量
+想自己看的话，分宿主指南在这里：[Pi](docs/setup/pi.md) · [Claude Code](docs/setup/claude-code.md) · [Codex](docs/setup/codex.md) · [其他宿主](docs/setup/generic.md)。如果你的 agent 不能抓取 URL，在浏览器里打开对应指南贴给它即可。
 
-只有这条会碰 session 文件：先列文件、给你看数字，你批准哪个才改哪个：
+### 体验对比（可选）——拿已有 session 量一量
+
+上面的安装配置全程不读 session 文件。下面这条**会**碰：先列文件、给你看数字，你批准哪个才改哪个（有备份）：
 
 ```text
 给我看看 image-context-cascade 在我已有的 agent session 上能省多少。
@@ -148,7 +76,8 @@ session 文件的位置：
 
 | 宿主 | 机制 | 你得到什么 |
 |---|---|---|
-| 自己维护的 agent / 框架（中间件） | 请求构造处调 `cascadeImages()` | 全自动，每次请求实时生效 |
+| **Pi** | 自带 adapter → `before_provider_request` | **全自动，每次请求实时生效，进程内处理**，历史图归档可找回——参考级集成 |
+| 自己维护的 agent / 框架 | 请求构造处调 `cascadeImages()` | 全自动，每次请求实时生效 |
 | Claude Code | `SessionEnd` hook → `image-cascade hook claude-code` | 每次会话结束自动归档；resume 加载的就是瘦身后的 transcript |
 | Codex | `AGENTS.md` 软指令 + 手动 `rescue` | 半自动——agent 主动提议，你批准 |
 | 其他任意 agent | `npx @image-cascade/cli rescue` | 手动，任何 JSON/JSONL transcript 都能用 |
@@ -157,9 +86,32 @@ session 文件的位置：
 
 - **归档，不是删除。** hook 触发的处理永远带 source store 加 `.icc-backup`，每张被归档的图都能按 hash 找回。不存在不可恢复的丢失。
 - **不做内容判断。** 分类是位置化、确定性的——当前轮永远原样保留。没有任何模型在替你决定哪张图"看起来重要"。
-- **无常驻占用。** 没有守护进程、没有监听；hook 只在会话结束时跑几毫秒，没东西可归档时就是幂等空转。
+- **无常驻占用。** 没有守护进程、没有监听；hook 只在会话边界跑几毫秒，没东西可归档时就是幂等空转。
 - **并发写入守卫。** `rescue` 在换入重写结果前会复查文件的 size/mtime，发现中途被别的进程动过就整体放弃。
 - **总开关。** `ICC_DISABLE=1` 关闭一切 hook 自动处理（手动命令不受影响）；`ICC_STORE_DIR` 可改默认 store 位置。卸载 = 删掉那条 hook 或那个标记区块。
+
+## CLI 参考
+
+CLI 覆盖三类场景：没有请求钩子的宿主、超大 session 的一次性抢救、以及找回归档图片：
+
+```bash
+npm install -g @image-cascade/cli        # 命令名：image-cascade（npx @image-cascade/cli 也行）
+
+image-cascade rescue session.jsonl                 # dry-run：展示能省多少
+image-cascade rescue session.jsonl --yes           # 先备份原文件，再重写
+image-cascade rescue session.jsonl --yes --store   # 同时归档原图，之后可找回
+image-cascade restore a1b2c3d4e5f6 --out img.png   # 把任何归档的图找回来
+image-cascade hook claude-code                     # SessionEnd hook 入口（stdin 读 payload）
+```
+
+两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 把 source store 写到本地 `~/.image-cascade/store`（用 `ICC_STORE_DIR` 可改位置）。
+
+session 文件的位置：
+
+- **Claude Code**：`~/.claude/projects/<项目>/*.jsonl` —— 真实 381 行 session 实测：**6.26 MB → 1.36 MB（−78%）**，35 个历史附件被降级，每一行仍是合法 JSON。
+- **Codex**：`~/.codex/sessions/<年>/<月>/<日>/rollout-*.jsonl` —— 真实 332 行 rollout 实测：**50.2 MB → 2.26 MB（−95.5%）**。Codex 会把每张生成图以裸 base64 存*两份*（`image_generation_call` 响应项 + `image_generation_end` 事件），所以图片密集的 Codex session 缩得尤其狠。
+
+**不要重写正在打开的 session。** agent 进程可能还在往文件里追加内容。先关掉会话，或者对拷贝件操作。agent 运行期间抢救*其他* session 没有问题。
 
 ## 把降级的图找回来
 
@@ -174,6 +126,27 @@ session 文件的位置：
 ```
 
 Restore 是追加新的当前内容，不是回填历史消息；因此不会破坏已有 prompt-cache 前缀。
+
+## 使用库（面向 agent / 框架作者）
+
+如果你的 agent 有请求构造钩子，直接在进程内跑 cascade——也就是上表里的全自动档：
+
+```bash
+npm install image-context-cascade
+```
+
+```ts
+import { cascadeImages } from "image-context-cascade";
+
+// 在你的 agent 构造 provider 请求的地方：
+const { payload, mutated, telemetry } = cascadeImages(requestPayload);
+
+// payload：历史图片已替换为稳定占位符，当前轮图片原样保留
+// telemetry：{ found, current, downgraded, estimatedSavedChars, ... }
+//            —— 只有计数和 hash，永远没有图片数据
+```
+
+这就是默认的 **positional 策略**：最后一条 user 消息及其后的图片是当前轮，更早的一律降级。它是无状态的——重启无损，对每次只看到单个请求的代理也同样正确。
 
 ## 工作原理
 
@@ -220,7 +193,7 @@ Tracker 模式多一层安全细化：既不是当前轮、也没被追踪过的
 
 ## 编写 adapter
 
-Adapter 是宿主钩子与 core 之间的胶水——[Pi 参考 adapter](packages/adapters/pi/src/index.ts) 只有 57 行：
+Adapter 是宿主钩子与 core 之间的胶水——[Pi 参考 adapter](packages/adapters/pi/src/index.ts) 连 store/restore 接线在内一共 99 行：
 
 1. 在请求构造处调用 `cascadeImages(payload, options)`，转发（可能被改写的）payload。
 2. 可选：在轮次开始时记录当前轮图片 hash，改用 `trackerStrategy`。

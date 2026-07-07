@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (repo only — no package changes)
+
+- Added `docs/setup/`: per-host agent setup guides (Pi / Claude Code / Codex / generic) with an auto-detect entry point that can be pasted to any coding agent as a single raw URL.
+- Upgraded the Pi reference adapter to the full v0.2 feature set: `cascadeImagesAsync` + `fsSourceStore` (restorable placeholders, shared default store dir, `ICC_STORE_DIR` / `ICC_DISABLE` respected, fail-open try/catch). Previously it was sync-only with no store.
+- README (both languages) restructured: agent-paste setup is now the primary quick start, per-host table includes Pi as the reference integration, CLI section rewritten as reference material.
+
 ## 0.2.2
 
 - Added: `image-cascade hook claude-code` subcommand — reads a Claude Code hook payload from stdin and archives that session's historical images (always stores, fail-open, for SessionEnd hooks).

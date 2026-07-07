@@ -35,98 +35,24 @@ Measured on a real 1.3 MB PNG payload: **1,296,014 chars → 315 chars (−99.98
 
 - **Not a prompt technique.** A prompt cannot delete bytes from the request payload; this is middleware.
 - **Not generic context compression.** It only manages images. Your text history is untouched.
-- **Not automatic for every agent.** Your agent needs a request-construction hook. Writing an adapter is ~40–60 lines (see the [Pi reference adapter](packages/adapters/pi/src/index.ts)); the conformance suite tells you when it's right.
+- **Not automatic for every agent.** Full per-request automation needs a request-construction hook (Pi has one; so does anything you build). Hosts without one get session-boundary hooks or the CLI — the [per-host table](#what-runs-day-to-day-per-host) below is honest about which is which.
 
-## Quick start
+## Get started — one paste to your agent
 
-```bash
-npm install image-context-cascade
-```
-
-```ts
-import { cascadeImages } from "image-context-cascade";
-
-// Wherever your agent builds the provider request:
-const { payload, mutated, telemetry } = cascadeImages(requestPayload);
-
-// payload: historical images replaced with stable placeholders,
-//          current-turn images untouched
-// telemetry: { found, current, downgraded, estimatedSavedChars, ... }
-//            — counts and hashes only, never image data
-```
-
-That's the default **positional strategy**: images at or after the last user message are current; everything earlier is downgraded. It is stateless — safe across restarts, and correct for proxies that see each request fresh.
-
-## Rescue an oversized session (CLI)
-
-For agents without a request-construction hook — Claude Code and Codex included — the CLI rewrites bloated session files offline:
-
-```bash
-npx @image-cascade/cli rescue path/to/session.jsonl                 # dry-run: shows what would be saved
-npx @image-cascade/cli rescue path/to/session.jsonl --yes           # backs up the original, then rewrites
-npx @image-cascade/cli rescue path/to/session.jsonl --yes --store   # also stores downgraded originals locally
-
-# Later: restore by the placeholder hash.
-npx @image-cascade/cli restore a1b2c3d4e5f6 --out restored.png
-```
-
-Or install globally with `npm install -g @image-cascade/cli` — the binary is named `image-cascade`.
-
-Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` is opt-in and writes a local content-addressed source store under `~/.image-cascade/store` unless you pass a directory (override the default with `ICC_STORE_DIR`).
-
-For Claude Code there is a hands-free variant: `image-cascade hook claude-code` reads a Claude Code hook payload from stdin and archives that session's historical images automatically — see the setup prompt below. Hook-triggered runs always store (restorable) and never fail the hook; `ICC_DISABLE=1` turns them off.
-
-Where session files live:
-
-- **Claude Code**: `~/.claude/projects/<project>/*.jsonl` — measured on a real 381-line session: **6.26 MB → 1.36 MB (−78%)**, 35 historical attachments downgraded, every line still valid JSON.
-- **Codex**: `~/.codex/sessions/<year>/<month>/<day>/rollout-*.jsonl` — measured on a real 332-line rollout: **50.2 MB → 2.26 MB (−95.5%)**. Codex stores each generated image *twice* as bare base64 (`image_generation_call` response item + `image_generation_end` event), so image-heavy Codex sessions collapse dramatically.
-
-**Do not rewrite a session that is currently open.** The agent process may be appending to the file. Close the session first, or work on a copy. Rescuing *other* sessions while an agent is running is fine.
-
-## Set up with your coding agent (one paste)
-
-Two separate prompts, because they do different jobs. **Setup** configures your agent for day-to-day use and never reads a session file. **Demo** (optional) measures savings on your existing sessions — it is the only one that touches them. Neither assumes which agent you use: the instruction tells the agent to identify its own host and configure what that host actually supports.
-
-### 1) Setup — configure my agent (reads no session files)
+Whatever coding agent you use, paste this and let it set itself up. It reads the [setup guides](docs/setup/README.md), identifies its own host, and applies the matching guide:
 
 ```text
-Set up image-context-cascade so my agent sessions stop accumulating stale image payloads.
-This is configuration only: do NOT read, list, or rewrite any session/transcript files in this task.
-
-1. Identify which agent host YOU are running in (Claude Code? Codex? Cursor? something else?).
-   Do not guess from these examples — check your actual environment.
-2. Install the CLI: npm install -g @image-cascade/cli
-   Verify: image-cascade --version prints a version. If global installs are not allowed,
-   use `npx @image-cascade/cli` in place of `image-cascade` below.
-3. Configure the deepest automation your host supports:
-   - Claude Code: merge this entry into ~/.claude/settings.json under hooks.SessionEnd
-     (merge into existing JSON — never overwrite the file; show me a diff before writing):
-       {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": "image-cascade hook claude-code", "timeout": 60}]}]}}
-     Effect: every time a session ends, its historical images are archived to restorable
-     placeholders (with an automatic .icc-backup), so future resumes and requests stay lean.
-     The current session's in-flight requests are out of reach for any external tool — this
-     is the deepest integration Claude Code allows today.
-   - Codex: Codex has no session-end hook today, so add a marked block to ~/.codex/AGENTS.md
-     (append; never overwrite; keep the markers so it can be removed cleanly):
-       <!-- image-context-cascade:start -->
-       Session files under ~/.codex/sessions accumulate base64 images that burn tokens.
-       When I mention heavy/slow sessions, offer: `image-cascade rescue <file>` (dry-run first,
-       `--yes --store` after my approval). Never rewrite the currently open session. A placeholder
-       like [Image <hash> omitted; restorable via image-cascade restore <hash>] means the original
-       is stored locally — run that restore command if the image is needed again.
-       <!-- image-context-cascade:end -->
-   - Other hosts: check whether your host has (a) a request-construction hook — then prefer
-     the npm middleware (`npm install image-context-cascade`, see "Quick start"); or (b) a
-     session-lifecycle hook that passes a transcript path — then wire the CLI there; or
-     (c) neither — then note that `npx @image-cascade/cli rescue <file>` works manually and
-     add a note to your host's instruction file (AGENTS.md or equivalent) like the Codex block.
-4. Report: exactly what you changed and where, how to undo it (delete the hook entry / the
-   marked block), and that ICC_DISABLE=1 disables all hook-triggered processing as a kill switch.
+Read and follow https://raw.githubusercontent.com/dlgod7/image-context-cascade/main/docs/setup/README.md
+— identify which agent host YOU are running in, then apply the guide for YOUR host
+(Pi / Claude Code / Codex / generic). This is configuration only: do NOT read, list,
+or rewrite any session/transcript files. When done, report what you changed and how to undo it.
 ```
 
-### 2) Demo (optional) — measure it on my existing sessions
+Per-host guides, if you'd rather read them yourself: [Pi](docs/setup/pi.md) · [Claude Code](docs/setup/claude-code.md) · [Codex](docs/setup/codex.md) · [everything else](docs/setup/generic.md). If your agent can't fetch URLs, open the guide in a browser and paste it in.
 
-This one **does** list session files and, only after showing you numbers, rewrites the ones you approve:
+### Optional demo — measure it on your existing sessions
+
+Setup never reads a session file. This second paste **does** — it lists your session files and, only after showing you numbers, rewrites the ones you approve (with backups):
 
 ```text
 Show me what image-context-cascade would save on my existing agent sessions.
@@ -150,7 +76,8 @@ Heads-up: this task lists my session files and rewrites the ones I approve (with
 
 | Host | Mechanism | What you get |
 |---|---|---|
-| Your own agent / framework (middleware) | `cascadeImages()` at request construction | Fully automatic, every request |
+| **Pi** | bundled adapter → `before_provider_request` | **Fully automatic, every request, in-process**, with restorable archive — the reference integration |
+| Your own agent / framework | `cascadeImages()` at request construction | Fully automatic, every request |
 | Claude Code | `SessionEnd` hook → `image-cascade hook claude-code` | Automatic at every session end; resumes load the lean transcript |
 | Codex | `AGENTS.md` guidance + manual `rescue` | Semi-automatic — the agent proposes, you approve |
 | Anything else | `npx @image-cascade/cli rescue` | Manual, works on any JSON/JSONL transcript |
@@ -159,9 +86,32 @@ Design guarantees that hold in every mode:
 
 - **Archive, not delete.** Hook-triggered runs always use the source store plus a `.icc-backup`; every archived image is restorable by hash. Nothing is ever unrecoverable.
 - **No content judgement.** Classification is positional and deterministic — the current turn is always kept intact. No model decides which of your images "look important".
-- **Nothing resident.** No daemon, no watcher; the hook runs for milliseconds at session end and is a no-op when there is nothing to archive (idempotent).
+- **Nothing resident.** No daemon, no watcher; hooks run for milliseconds at session boundaries and are a no-op when there is nothing to archive (idempotent).
 - **Concurrent-write guard.** `rescue` re-checks the file's size/mtime before swapping in the rewrite and aborts if another process touched it mid-flight.
 - **Kill switch.** `ICC_DISABLE=1` disables hook-triggered processing (manual commands still work); `ICC_STORE_DIR` relocates the default store. Uninstall = delete the hook entry or marked block.
+
+## CLI reference
+
+The CLI covers hosts without a request hook, one-off rescues of oversized sessions, and restores:
+
+```bash
+npm install -g @image-cascade/cli        # binary: image-cascade (npx @image-cascade/cli also works)
+
+image-cascade rescue session.jsonl                 # dry-run: shows what would be saved
+image-cascade rescue session.jsonl --yes           # backs up the original, then rewrites
+image-cascade rescue session.jsonl --yes --store   # also archives originals for restore
+image-cascade restore a1b2c3d4e5f6 --out img.png   # bring any archived image back
+image-cascade hook claude-code                     # SessionEnd hook entry point (stdin payload)
+```
+
+Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` writes a local content-addressed store under `~/.image-cascade/store` (override with `ICC_STORE_DIR`).
+
+Where session files live:
+
+- **Claude Code**: `~/.claude/projects/<project>/*.jsonl` — measured on a real 381-line session: **6.26 MB → 1.36 MB (−78%)**, 35 historical attachments downgraded, every line still valid JSON.
+- **Codex**: `~/.codex/sessions/<year>/<month>/<day>/rollout-*.jsonl` — measured on a real 332-line rollout: **50.2 MB → 2.26 MB (−95.5%)**. Codex stores each generated image *twice* as bare base64 (`image_generation_call` response item + `image_generation_end` event), so image-heavy Codex sessions collapse dramatically.
+
+**Do not rewrite a session that is currently open.** The agent process may be appending to the file. Close the session first, or work on a copy. Rescuing *other* sessions while an agent is running is fine.
 
 ## Bring a downgraded image back
 
@@ -176,6 +126,28 @@ Assistant: reads restored-a1b2c3d4e5f6.png with the host file/image tool, then a
 ```
 
 Restore appends new current content. It does not rewrite old transcript bytes, so it does not destroy prompt-cache prefixes.
+
+## Use the library (agent & framework authors)
+
+If your agent has a request-construction hook, run the cascade in-process — that's the fully-automatic tier in the table above:
+
+```bash
+npm install image-context-cascade
+```
+
+```ts
+import { cascadeImages } from "image-context-cascade";
+
+// Wherever your agent builds the provider request:
+const { payload, mutated, telemetry } = cascadeImages(requestPayload);
+
+// payload: historical images replaced with stable placeholders,
+//          current-turn images untouched
+// telemetry: { found, current, downgraded, estimatedSavedChars, ... }
+//            — counts and hashes only, never image data
+```
+
+That's the default **positional strategy**: images at or after the last user message are current; everything earlier is downgraded. It is stateless — safe across restarts, and correct for proxies that see each request fresh.
 
 ## How it works
 
@@ -222,7 +194,7 @@ Tracker mode adds one safety refinement: an image that is neither current nor pr
 
 ## Writing an adapter
 
-An adapter is the glue between your agent's hooks and the core — the [Pi reference adapter](packages/adapters/pi/src/index.ts) is 57 lines:
+An adapter is the glue between your agent's hooks and the core — the [Pi reference adapter](packages/adapters/pi/src/index.ts) is 99 lines including the full store/restore wiring:
 
 1. On request construction, call `cascadeImages(payload, options)` and forward the (possibly mutated) payload.
 2. Optionally, on turn start, record current-turn image hashes and use `trackerStrategy`.

@@ -1,17 +1,26 @@
+import { join } from "node:path";
+import { homedir } from "node:os";
 import {
   builtinMatchers,
-  cascadeImages,
+  cascadeImagesAsync,
+  fsSourceStore,
+  imageIdentity,
   InMemoryTracker,
   trackerStrategy,
   type CascadeTelemetry,
 } from "image-context-cascade";
 
+// Structural typing on purpose: this file works as a Pi extension without
+// importing @earendil-works/pi-coding-agent, so it can be dropped into
+// ~/.pi/agent/extensions/ as-is.
 type PiApi = {
   on(name: "before_agent_start", cb: (event: { images?: unknown[] }) => unknown): void;
-  on(name: "before_provider_request", cb: (event: { payload: unknown }) => unknown): void;
+  on(name: "before_provider_request", cb: (event: { payload: unknown }) => Promise<unknown> | unknown): void;
   on(name: "after_provider_response", cb: (event: { status?: number }) => unknown): void;
   appendEntry(name: string, value: unknown): void;
 };
+
+const STORE_DIR = process.env.ICC_STORE_DIR || join(homedir(), ".image-cascade", "store");
 
 function summaryInstruction(count: number): string {
   return [
@@ -23,6 +32,22 @@ function summaryInstruction(count: number): string {
   ].join("\n");
 }
 
+function identityFromBlock(block: unknown): ReturnType<typeof imageIdentity> | null {
+  if (!block || typeof block !== "object") return null;
+
+  // Pi prompt attachments before provider serialization: { type: "image", mimeType, data }.
+  const maybePiImage = block as { type?: unknown; data?: unknown };
+  if (maybePiImage.type === "image" && typeof maybePiImage.data === "string" && maybePiImage.data.length > 0) {
+    return imageIdentity(maybePiImage.data);
+  }
+
+  for (const matcher of builtinMatchers) {
+    const match = matcher.match(block);
+    if (match) return match.identity;
+  }
+  return null;
+}
+
 export default function imageContextCascadePiAdapter(pi: PiApi): void {
   const tracker = new InMemoryTracker();
   let currentTurnHashes = new Set<string>();
@@ -31,22 +56,39 @@ export default function imageContextCascadePiAdapter(pi: PiApi): void {
   pi.on("before_agent_start", (event) => {
     currentTurnHashes = new Set<string>();
     for (const image of event.images ?? []) {
-      for (const matcher of builtinMatchers) {
-        const match = matcher.match(image);
-        if (!match) continue;
-        currentTurnHashes.add(match.identity.hash);
-        tracker.remember(match.identity.hash, { seenInUserTurn: true });
-        break;
-      }
+      const identity = identityFromBlock(image);
+      if (!identity) continue;
+      currentTurnHashes.add(identity.hash);
+      tracker.remember(identity.hash, { seenInUserTurn: true });
     }
+
     if (currentTurnHashes.size === 0) return;
-    return { message: { customType: "image-context-cascade", content: summaryInstruction(currentTurnHashes.size), display: false } };
+    return {
+      message: {
+        customType: "image-context-cascade",
+        content: summaryInstruction(currentTurnHashes.size),
+        display: false,
+        details: {
+          currentImageCount: currentTurnHashes.size,
+          note: "Current images remain visible this turn; old tracked images are downgraded to stable text placeholders in later provider requests.",
+        },
+      },
+    };
   });
 
-  pi.on("before_provider_request", (event) => {
-    const result = cascadeImages(event.payload, { strategy: trackerStrategy({ currentTurnHashes, tracker }) });
-    pendingTelemetry = result.telemetry;
-    if (result.mutated) return result.payload;
+  pi.on("before_provider_request", async (event) => {
+    if (process.env.ICC_DISABLE === "1") return;
+    try {
+      const result = await cascadeImagesAsync(event.payload, {
+        store: fsSourceStore(STORE_DIR),
+        strategy: trackerStrategy({ currentTurnHashes, tracker }),
+      });
+      pendingTelemetry = result.telemetry;
+      if (result.mutated) return result.payload;
+    } catch {
+      // Fail open: a broken cascade must never break the agent's request.
+      pendingTelemetry = null;
+    }
   });
 
   pi.on("after_provider_response", (event) => {
