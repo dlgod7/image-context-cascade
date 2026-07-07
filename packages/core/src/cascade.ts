@@ -5,8 +5,8 @@ import { defaultPlaceholder, restorablePlaceholder } from "./placeholder";
 import { defaultTierPolicy } from "./store";
 
 type FoundImage = {
-  parent: unknown[];
-  index: number;
+  parent: unknown[] | Record<string, unknown>;
+  index: number | string;
   block: object;
   identity: ImageIdentity;
   approxChars: number;
@@ -45,9 +45,26 @@ function looksLikeContentArray(value: unknown[]): boolean {
   return value.some((item) => item && typeof item === "object" && typeof (item as { type?: unknown }).type === "string");
 }
 
+function setBlock(image: FoundImage, replaced: unknown): void {
+  (image.parent as Record<number | string, unknown>)[image.index] = replaced;
+}
+
+type TryMatch = (block: object) => { identity: ImageIdentity; approxChars: number; matcher: BlockMatcher } | null;
+
+function makeTryMatch(matchers: BlockMatcher[]): TryMatch {
+  return (block) => {
+    for (const matcher of matchers) {
+      const match = matcher.match(block);
+      if (match) return { ...match, matcher };
+    }
+    return null;
+  };
+}
+
 function collect(root: unknown, matchers: BlockMatcher[], limits: Required<NonNullable<CascadeOptions["limits"]>>): CollectResult {
   const found: FoundImage[] = [];
   const seen = new WeakSet<object>();
+  const tryMatch = makeTryMatch(matchers);
   let nodes = 0;
   let traversalTruncated = false;
 
@@ -81,9 +98,15 @@ function collect(root: unknown, matchers: BlockMatcher[], limits: Required<NonNu
         }
         for (let index = value.length - 1; index >= 0; index--) {
           const item = value[index];
-          if (item && typeof item === "object" && "content" in item) {
+          if (!item || typeof item !== "object") continue;
+          if ("content" in item) {
             stack.push({ value: (item as { content?: unknown }).content, messageIndex: index, lastUserMessageIndex: arrayLastUserMessageIndex, depth: depth + 1 });
+            continue;
           }
+          // Item-level blocks without content, e.g. image_generation_call in a Responses input array.
+          const itemMatch = tryMatch(item);
+          if (itemMatch) found.push({ parent: value, index, block: item, ...itemMatch, ctx: { messageIndex: index, lastUserMessageIndex: arrayLastUserMessageIndex } });
+          else stack.push({ value: item, messageIndex: index, lastUserMessageIndex: arrayLastUserMessageIndex, depth: depth + 1 });
         }
         continue;
       }
@@ -92,21 +115,27 @@ function collect(root: unknown, matchers: BlockMatcher[], limits: Required<NonNu
         for (let i = 0; i < value.length; i++) {
           const block = value[i];
           if (!block || typeof block !== "object") continue;
-          for (const matcher of matchers) {
-            const match = matcher.match(block);
-            if (match) {
-              found.push({ parent: value, index: i, block, matcher, ...match, ctx: { messageIndex, lastUserMessageIndex } });
-              break;
-            }
-          }
+          const match = tryMatch(block);
+          if (match) found.push({ parent: value, index: i, block, ...match, ctx: { messageIndex, lastUserMessageIndex } });
         }
       }
       for (let i = value.length - 1; i >= 0; i--) stack.push({ value: value[i], messageIndex, lastUserMessageIndex, depth: depth + 1 });
       continue;
     }
 
-    const values = Object.values(value);
-    for (let i = values.length - 1; i >= 0; i--) stack.push({ value: values[i], messageIndex, lastUserMessageIndex, depth: depth + 1 });
+    const entries = Object.entries(value);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const [key, child] = entries[i]!;
+      if (child && typeof child === "object" && !Array.isArray(child)) {
+        // Blocks stored as object field values, e.g. a transcript line's payload field.
+        const childMatch = tryMatch(child as object);
+        if (childMatch) {
+          found.push({ parent: value as Record<string, unknown>, index: key, block: child as object, ...childMatch, ctx: { messageIndex, lastUserMessageIndex } });
+          continue;
+        }
+      }
+      stack.push({ value: child, messageIndex, lastUserMessageIndex, depth: depth + 1 });
+    }
   }
 
   if (nodes > limits.maxNodes) traversalTruncated = true;
@@ -128,6 +157,7 @@ function objectSource(value: object, inherited: TierContext["source"]): TierCont
 function collectAsync(root: unknown, matchers: BlockMatcher[], limits: Required<NonNullable<CascadeOptions["limits"]>>): CollectAsyncResult {
   const found: FoundImageAsync[] = [];
   const seen = new WeakSet<object>();
+  const tryMatch = makeTryMatch(matchers);
   let nodes = 0;
   let traversalTruncated = false;
   const overLimit = (depth: number): boolean => {
@@ -164,10 +194,16 @@ function collectAsync(root: unknown, matchers: BlockMatcher[], limits: Required<
         }
         for (let index = value.length - 1; index >= 0; index--) {
           const item = value[index];
-          if (item && typeof item === "object" && "content" in item) {
-            const msgSource = roleSource((item as { role?: unknown }).role) ?? currentSource;
+          if (!item || typeof item !== "object") continue;
+          const msgSource = roleSource((item as { role?: unknown }).role) ?? currentSource;
+          if ("content" in item) {
             stack.push({ value: (item as { content?: unknown }).content, messageIndex: index, lastUserMessageIndex: arrayLastUserMessageIndex, depth: depth + 1, source: msgSource, age: suffixUsers[index] ?? 0 });
+            continue;
           }
+          // Item-level blocks without content, e.g. image_generation_call in a Responses input array.
+          const itemMatch = tryMatch(item);
+          if (itemMatch) found.push({ parent: value, index, block: item, ...itemMatch, ctx: { messageIndex: index, lastUserMessageIndex: arrayLastUserMessageIndex }, tierCtx: { age: suffixUsers[index] ?? 0, source: objectSource(item, currentSource) } });
+          else stack.push({ value: item, messageIndex: index, lastUserMessageIndex: arrayLastUserMessageIndex, depth: depth + 1, source: msgSource, age: suffixUsers[index] ?? 0 });
         }
         continue;
       }
@@ -175,21 +211,26 @@ function collectAsync(root: unknown, matchers: BlockMatcher[], limits: Required<
         for (let i = 0; i < value.length; i++) {
           const block = value[i];
           if (!block || typeof block !== "object") continue;
-          const blockSource = objectSource(block, currentSource);
-          for (const matcher of matchers) {
-            const match = matcher.match(block);
-            if (match) {
-              found.push({ parent: value, index: i, block, matcher, ...match, ctx: { messageIndex, lastUserMessageIndex }, tierCtx: { age, source: blockSource } });
-              break;
-            }
-          }
+          const match = tryMatch(block);
+          if (match) found.push({ parent: value, index: i, block, ...match, ctx: { messageIndex, lastUserMessageIndex }, tierCtx: { age, source: objectSource(block, currentSource) } });
         }
       }
       for (let i = value.length - 1; i >= 0; i--) stack.push({ value: value[i], messageIndex, lastUserMessageIndex, depth: depth + 1, source: currentSource, age });
       continue;
     }
-    const values = Object.values(value);
-    for (let i = values.length - 1; i >= 0; i--) stack.push({ value: values[i], messageIndex, lastUserMessageIndex, depth: depth + 1, source: currentSource, age });
+    const entries = Object.entries(value);
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const [key, child] = entries[i]!;
+      if (child && typeof child === "object" && !Array.isArray(child)) {
+        // Blocks stored as object field values, e.g. a transcript line's payload field.
+        const childMatch = tryMatch(child as object);
+        if (childMatch) {
+          found.push({ parent: value as Record<string, unknown>, index: key, block: child as object, ...childMatch, ctx: { messageIndex, lastUserMessageIndex }, tierCtx: { age, source: objectSource(child as object, currentSource) } });
+          continue;
+        }
+      }
+      stack.push({ value: child, messageIndex, lastUserMessageIndex, depth: depth + 1, source: currentSource, age });
+    }
   }
   if (nodes > limits.maxNodes) traversalTruncated = true;
   return { found, traversalTruncated };
@@ -268,7 +309,7 @@ export function cascadeImages<T>(payload: T, options: InternalCascadeOptions): C
       continue;
     }
     const text = decision.placeholderText ?? placeholder(decision.identity, image.block);
-    image.parent[image.index] = image.matcher.replace(image.block, text);
+    setBlock(image, image.matcher.replace(image.block, text));
     telemetry.downgraded++;
     telemetry.estimatedReplacementChars += estimatedReplacementChars(text);
     mutated = true;
@@ -352,7 +393,7 @@ export async function cascadeImagesAsync<T>(payload: T, options: InternalCascade
     }
     if (options.dedupe !== false && currentHashes.has(image.identity.hash)) {
       const text = `[Image ${image.identity.shortHash} duplicate omitted; the original appears in the current turn of this payload.]`;
-      image.parent[image.index] = image.matcher.replace(image.block, text);
+      setBlock(image, image.matcher.replace(image.block, text));
       telemetry.dedupedRefs = (telemetry.dedupedRefs ?? 0) + 1;
       telemetry.downgraded++;
       telemetry.estimatedReplacementChars += estimatedReplacementChars(text);
@@ -365,7 +406,7 @@ export async function cascadeImagesAsync<T>(payload: T, options: InternalCascade
       if (extracted) {
         const thumb = await options.thumbnailer(withMeta(extracted, image));
         if (thumb) {
-          image.parent[image.index] = image.matcher.replaceWithImage(image.block, { ...extracted, data: thumb.data, mediaType: thumb.mediaType });
+          setBlock(image, image.matcher.replaceWithImage(image.block, { ...extracted, data: thumb.data, mediaType: thumb.mediaType }));
           telemetry.thumbnailed = (telemetry.thumbnailed ?? 0) + 1;
           telemetry.downgraded++;
           telemetry.estimatedReplacementChars += thumb.data.length + REPLACEMENT_ENVELOPE_CHARS;
@@ -376,7 +417,7 @@ export async function cascadeImagesAsync<T>(payload: T, options: InternalCascade
     }
     if (!replaced) {
       const text = placeholder(image.identity, image.block);
-      image.parent[image.index] = image.matcher.replace(image.block, text);
+      setBlock(image, image.matcher.replace(image.block, text));
       telemetry.downgraded++;
       telemetry.estimatedReplacementChars += estimatedReplacementChars(text);
       mutated = true;

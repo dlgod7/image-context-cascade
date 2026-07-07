@@ -1,6 +1,6 @@
 {
   "name": "@image-cascade/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Rescue CLI for oversized image-context-cascade session files.",
@@ -42,7 +42,7 @@
     "rescue"
   ],
   "dependencies": {
-    "image-context-cascade": "0.2.0"
+    "image-context-cascade": "0.2.1"
   },
   "devDependencies": {}
 }

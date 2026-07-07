@@ -22,6 +22,7 @@ export const anthropicMatcher = builtinMatchers[0]!;
 export const anthropicDocumentMatcher = builtinMatchers[1]!;
 export const openaiChatMatcher = builtinMatchers[2]!;
 export const openaiResponsesMatcher = builtinMatchers[3]!;
+export const imageGenerationMatcher = builtinMatchers[4]!;
 
 export { defaultPlaceholder, restorablePlaceholder } from "./placeholder";
 export { InMemoryTracker } from "./tracker";

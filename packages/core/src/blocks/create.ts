@@ -2,6 +2,7 @@ import type { BlockMatcher, ImageIdentity, StoredImage } from "../types";
 import { imageIdentity } from "../identity";
 import { imageIdentityInputFromUri, parseDataUri } from "./dataUri";
 import { anthropicDocumentMatcher } from "./anthropicDocument";
+import { imageGenerationMatcher } from "./imageGeneration";
 
 const ENVELOPE_CHARS = 96;
 
@@ -111,5 +112,6 @@ export function createBuiltinMatchers(hasher: (data: string) => string): BlockMa
       },
       replaceWithImage(_block: unknown, img: StoredImage) { return { type: "input_image", image_url: dataUri(img) }; },
     },
+    imageGenerationMatcher(hasher),
   ];
 }

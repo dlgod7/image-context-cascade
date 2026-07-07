@@ -59,7 +59,7 @@ That's the default **positional strategy**: images at or after the last user mes
 
 ## Rescue an oversized session (CLI)
 
-For agents without a request-construction hook — Claude Code included — the CLI rewrites bloated session files offline:
+For agents without a request-construction hook — Claude Code and Codex included — the CLI rewrites bloated session files offline:
 
 ```bash
 npx @image-cascade/cli rescue path/to/session.jsonl                 # dry-run: shows what would be saved
@@ -72,7 +72,37 @@ npx @image-cascade/cli restore a1b2c3d4e5f6 --out restored.png
 
 Or install globally with `npm install -g @image-cascade/cli` — the binary is named `image-cascade`.
 
-Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` is opt-in and writes a local content-addressed source store under `~/.image-cascade/store` unless you pass a directory. Measured on a real 381-line Claude Code session: **6.26 MB → 1.36 MB (−78%)**, 35 historical attachments downgraded, every line still valid JSON, current-turn content untouched.
+Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` is opt-in and writes a local content-addressed source store under `~/.image-cascade/store` unless you pass a directory.
+
+Where session files live:
+
+- **Claude Code**: `~/.claude/projects/<project>/*.jsonl` — measured on a real 381-line session: **6.26 MB → 1.36 MB (−78%)**, 35 historical attachments downgraded, every line still valid JSON.
+- **Codex**: `~/.codex/sessions/<year>/<month>/<day>/rollout-*.jsonl` — measured on a real 332-line rollout: **50.2 MB → 2.26 MB (−95.5%)**. Codex stores each generated image *twice* as bare base64 (`image_generation_call` response item + `image_generation_end` event), so image-heavy Codex sessions collapse dramatically.
+
+**Do not rewrite a session that is currently open.** The agent process may be appending to the file. Close the session first, or work on a copy. Rescuing *other* sessions while an agent is running is fine.
+
+## Set up with your coding agent (one paste)
+
+You don't need to read the docs — paste this into Claude Code, Codex, or any coding agent with shell access, and it will do the rest:
+
+```text
+Install the image-cascade CLI and shrink my oversized AI-agent session files. Follow these steps exactly:
+
+1. Run: npm install -g @image-cascade/cli
+   Verify: `image-cascade --version` prints a version number. If global installs are not allowed, use `npx @image-cascade/cli` instead of `image-cascade` everywhere below.
+2. List my 5 largest session files by size:
+   - Claude Code: ~/.claude/projects/*/*.jsonl (on Windows: %USERPROFILE%\.claude\projects\)
+   - Codex: ~/.codex/sessions/*/*/*/rollout-*.jsonl (on Windows: %USERPROFILE%\.codex\sessions\)
+3. Safety rules: never touch the session file of the conversation you are running in right now. If a listed session might still be open in another window, ask me to close it first or skip it.
+4. For each remaining file, dry-run: image-cascade rescue <file>
+   This writes nothing. Note the "estimatedSavedChars" and "estimatedBytesAfter" it prints.
+5. Only where the dry-run shows meaningful savings (more than ~100 KB), apply:
+   image-cascade rescue <file> --yes --store
+   This creates a backup next to the original (.icc-backup) before rewriting, and --store keeps every removed image restorable via `image-cascade restore <hash>`.
+6. Report a table: file, bytes before → after, images downgraded, backup path. Do not delete the backups.
+```
+
+The current-turn image is never touched, the rewrite is atomic and idempotent, and every removed image is recoverable from the backup — and from the local store when `--store` is on.
 
 ## Bring a downgraded image back
 
@@ -100,7 +130,7 @@ Restore appends new current content. It does not rewrite old transcript bytes, s
                                               img C (current turn) → sent intact
 ```
 
-1. **Find** — walk the payload; match image blocks per provider format (Anthropic base64 blocks, OpenAI Chat `image_url`, OpenAI Responses `input_image`, data URIs), plus Anthropic base64 `document` attachments (e.g. PDFs), which cause the same historical-resend problem.
+1. **Find** — walk the payload; match image blocks per provider format (Anthropic base64 blocks, OpenAI Chat `image_url`, OpenAI Responses `input_image`, data URIs, and bare-base64 `image_generation_call` results), plus Anthropic base64 `document` attachments (e.g. PDFs), which cause the same historical-resend problem. Blocks are matched wherever they sit — content arrays, item-level entries in a message list, or object fields in a transcript line.
 2. **Classify** — each image is `current`, `historical`, or `unknown`, via a pluggable strategy.
 3. **Tier** — current images remain hot; historical images can be warm thumbnails or cold placeholders, according to an injected tier policy and thumbnailer.
 4. **Store and restore** — when a source store is enabled, original bytes are stored locally by content hash, and cold placeholders can be restored later with `image-cascade restore <hash>`.
@@ -153,12 +183,13 @@ New provider format? Implement a `BlockMatcher` (`match(block)` / `replace(block
 - Remote URL references are not stored. The source store persists base64/data-URI bytes that are present in the payload; it does not fetch URLs.
 - Exact-byte identity only: the same image re-encoded or resized hashes differently. Perceptual hashing is future research.
 - Warm thumbnails require a host-injected deterministic `thumbnailer`. Core and CLI do not depend on Sharp or any other image-processing library.
-- Closed agents without request-construction hooks (e.g. Claude Code today) cannot run the middleware in-process; use the [rescue CLI](#rescue-an-oversized-session-cli) to rewrite session files offline instead.
+- Closed agents without request-construction hooks (e.g. Claude Code and Codex today) cannot run the middleware in-process; use the [rescue CLI](#rescue-an-oversized-session-cli) to rewrite session files offline instead.
 
 ## Roadmap
 
 - **v0.1** — core with positional + tracker strategies, built-in matchers for three provider image formats plus Anthropic document attachments, session rescue CLI, Pi reference adapter, conformance harness with a language-neutral corpus, verified benchmarks.
-- **v0.2 (this release)** — opt-in source store, hot/warm/cold tiered downgrade model, injected thumbnailer interface, restorable placeholders, `image-cascade restore`, same-payload byte dedupe, and the Claude Code zero-component restore loop through shell + file tools.
+- **v0.2** — opt-in source store, hot/warm/cold tiered downgrade model, injected thumbnailer interface, restorable placeholders, `image-cascade restore`, same-payload byte dedupe, and the Claude Code zero-component restore loop through shell + file tools.
+- **v0.2.1 (this release)** — Codex rollout sessions verified end-to-end; new matcher for bare-base64 `image_generation_call` / `image_generation_end` results; traversal now catches item-level and object-field blocks, not just content-array members.
 - **v0.3 planned** — budget-driven downgrade, richer host adapters, and an optional MCP server for hosts that do not expose a shell tool.
 - **Future research** — perceptual hashing for near-duplicate images; persistent cross-session trackers with safe privacy defaults.
 

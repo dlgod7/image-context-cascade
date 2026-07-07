@@ -58,7 +58,7 @@ const { payload, mutated, telemetry } = cascadeImages(requestPayload);
 
 ## 抢救超大 session（CLI）
 
-对没有请求构造钩子的 agent——包括 Claude Code——CLI 可以离线重写膨胀的 session 文件：
+对没有请求构造钩子的 agent——包括 Claude Code 和 Codex——CLI 可以离线重写膨胀的 session 文件：
 
 ```bash
 npx @image-cascade/cli rescue path/to/session.jsonl                 # dry-run：展示能省多少
@@ -71,7 +71,37 @@ npx @image-cascade/cli restore a1b2c3d4e5f6 --out restored.png
 
 也可以 `npm install -g @image-cascade/cli` 全局安装——装出来的命令名是 `image-cascade`。
 
-两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 是显式 opt-in，默认把 source store 写到 `~/.image-cascade/store`，也可以传目录。真实 381 行 Claude Code session 实测：**6.26 MB → 1.36 MB（−78%）**，35 个历史附件被降级，每一行仍是合法 JSON，当前轮内容一字未动。
+两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 是显式 opt-in，默认把 source store 写到 `~/.image-cascade/store`，也可以传目录。
+
+session 文件的位置：
+
+- **Claude Code**：`~/.claude/projects/<项目>/*.jsonl` —— 真实 381 行 session 实测：**6.26 MB → 1.36 MB（−78%）**，35 个历史附件被降级，每一行仍是合法 JSON。
+- **Codex**：`~/.codex/sessions/<年>/<月>/<日>/rollout-*.jsonl` —— 真实 332 行 rollout 实测：**50.2 MB → 2.26 MB（−95.5%）**。Codex 会把每张生成图以裸 base64 存*两份*（`image_generation_call` 响应项 + `image_generation_end` 事件），所以图片密集的 Codex session 缩得尤其狠。
+
+**不要重写正在打开的 session。** agent 进程可能还在往文件里追加内容。先关掉会话，或者对拷贝件操作。agent 运行期间抢救*其他* session 没有问题。
+
+## 丢给你的 agent 一键搞定（复制即用）
+
+不想读文档的话，把下面这段直接粘给 Claude Code、Codex 或任何有 shell 的 coding agent，它会替你搞定：
+
+```text
+安装 image-cascade CLI 并压缩我过大的 AI agent session 文件。严格按以下步骤执行：
+
+1. 运行：npm install -g @image-cascade/cli
+   验收：`image-cascade --version` 打印出版本号。如果不允许全局安装，下面所有 image-cascade 命令改用 `npx @image-cascade/cli`。
+2. 按体积列出我最大的 5 个 session 文件：
+   - Claude Code：~/.claude/projects/*/*.jsonl（Windows 在 %USERPROFILE%\.claude\projects\）
+   - Codex：~/.codex/sessions/*/*/*/rollout-*.jsonl（Windows 在 %USERPROFILE%\.codex\sessions\）
+3. 安全规则：绝不碰你当前这个会话自己的 session 文件。列表里如果有可能还开着的会话，先让我关掉，或者跳过它。
+4. 对每个候选文件先 dry-run：image-cascade rescue <文件>
+   这一步不写任何东西。记下它打印的 estimatedSavedChars 和 estimatedBytesAfter。
+5. 只对 dry-run 显示节省有意义（大于约 100 KB）的文件执行：
+   image-cascade rescue <文件> --yes --store
+   写入前会在原文件旁生成备份（.icc-backup）；--store 让每张被移除的图都能用 `image-cascade restore <hash>` 找回。
+6. 汇报一张表：文件、前后字节数、降级图片数、备份路径。不要删备份。
+```
+
+当前轮图片永远不被触碰，重写是原子且幂等的，每张被移除的图都能从备份找回——开了 `--store` 还能从本地 store 按 hash 找回。
 
 ## 把降级的图找回来
 
@@ -99,7 +129,7 @@ Restore 是追加新的当前内容，不是回填历史消息；因此不会破
                                               图 C（当前轮）→ 原样发送
 ```
 
-1. **发现** —— 遍历 payload，按 provider 格式匹配图片块（Anthropic base64 块、OpenAI Chat `image_url`、OpenAI Responses `input_image`、data URI），外加 Anthropic 的 base64 `document` 附件（如 PDF）——它们造成的历史重发问题一模一样。
+1. **发现** —— 遍历 payload，按 provider 格式匹配图片块（Anthropic base64 块、OpenAI Chat `image_url`、OpenAI Responses `input_image`、data URI、`image_generation_call` 的裸 base64 result），外加 Anthropic 的 base64 `document` 附件（如 PDF）——它们造成的历史重发问题一模一样。图片块在哪都认得：content 数组里、消息列表的 item 级条目、或 transcript 行的对象字段。
 2. **分类** —— 每个图片块经可插拔策略判定为 `current`、`historical` 或 `unknown`。
 3. **分层** —— 当前轮保持 hot；历史图片按 tier policy 与 thumbnailer 变成 warm 缩略图或 cold 占位符。
 4. **存储与找回** —— 开启 source store 时，原始字节按内容 hash 存到本地，之后可用 `image-cascade restore <hash>` 找回。
@@ -152,12 +182,13 @@ Adapter 是宿主钩子与 core 之间的胶水——[Pi 参考 adapter](package
 - 远程 URL 引用图不会进入 store。Source store 只保存 payload 中已经存在的 base64/data URI 字节，不主动抓取 URL。
 - 仅支持精确字节身份：同一张图片重新编码或缩放后 hash 不同；感知哈希属于未来研究方向。
 - Warm 缩略图需要宿主注入确定性的 `thumbnailer`。Core 和 CLI 都不依赖 Sharp 或其他图像处理库。
-- 没有请求构造钩子的封闭 agent（如今天的 Claude Code）无法在进程内运行本中间件；请改用 [rescue CLI](#抢救超大-session-cli) 离线重写 session 文件。
+- 没有请求构造钩子的封闭 agent（如今天的 Claude Code 和 Codex）无法在进程内运行本中间件；请改用 [rescue CLI](#抢救超大-session-cli) 离线重写 session 文件。
 
 ## 路线图
 
 - **v0.1**—— core 与 positional + tracker 双策略、三种 provider 图片格式加 Anthropic document 附件的内置 matcher、session 抢救 CLI、Pi 参考 adapter、含语言无关语料的 conformance 套件、经验证的基准测试。
-- **v0.2（本版本）**—— opt-in source store、hot/warm/cold 三层降级模型、注入式 thumbnailer 接口、可找回占位符、`image-cascade restore`、同 payload 精确字节去重，以及 Claude Code 通过 shell + 文件工具完成的零组件找回闭环。
+- **v0.2**—— opt-in source store、hot/warm/cold 三层降级模型、注入式 thumbnailer 接口、可找回占位符、`image-cascade restore`、同 payload 精确字节去重，以及 Claude Code 通过 shell + 文件工具完成的零组件找回闭环。
+- **v0.2.1（本版本）**—— Codex rollout session 端到端实测通过；新增 `image_generation_call` / `image_generation_end` 裸 base64 result 的 matcher；遍历引擎现在也匹配消息列表的 item 级块和对象字段块，不再只认 content 数组成员。
 - **v0.3 计划**—— 预算驱动降级、更丰富的宿主 adapter，以及面向没有 shell 工具的宿主的 optional MCP server。
 - **未来研究** —— 近似图片的感知哈希；带安全隐私默认值的跨会话持久 tracker。
 

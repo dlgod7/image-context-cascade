@@ -18,24 +18,24 @@
     },
     "packages/cli": {
       "name": "@image-cascade/cli",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "bin": {
         "image-cascade": "dist/main.js",
       },
       "dependencies": {
-        "image-context-cascade": "0.2.0",
+        "image-context-cascade": "0.2.1",
       },
     },
     "packages/conformance": {
       "name": "@image-cascade/conformance",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
-        "image-context-cascade": "0.2.0",
+        "image-context-cascade": "0.2.1",
       },
     },
     "packages/core": {
       "name": "image-context-cascade",
-      "version": "0.2.0",
+      "version": "0.2.1",
     },
   },
   "packages": {
