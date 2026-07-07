@@ -236,7 +236,7 @@ Related projects solving *different* problems:
 - [context-cascade](https://github.com/DNYoussef/context-cascade) is a Claude Code plugin architecture for layered context loading — no relation beyond the name.
 
 ## Acknowledgments
-1. Thanks to the linux.do community for the feedback, discussions, and inspiration during the development process.
+1. Thanks to the [linux.do](https://linux.do) community for the feedback, discussions, and inspiration during the development process.
 2. Thanks to Fable-5 (under Claude Code) for their contributions to the project.
 
 ## License
