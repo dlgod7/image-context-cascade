@@ -8,10 +8,10 @@ import { parseArgs } from "node:util";
 import { cascadeImages, cascadeImagesAsync, fsSourceStore, restoreImage } from "image-context-cascade";
 
 const historicalStrategy = Object.assign(() => "historical", { cascadeStrategyName: "custom" });
-const defaultStoreDir = () => join(homedir(), ".image-cascade", "store");
+const defaultStoreDir = () => process.env.ICC_STORE_DIR || join(homedir(), ".image-cascade", "store");
 
 function usage() {
-  return `image-cascade rescue <file> [--yes] [--all] [--json] [--store[=dir]]\nimage-cascade restore <hash> [--store <dir>] [--out <file>]\n\nRescue oversized image session files by downgrading historical image blocks.\n\nCommands:\n  rescue <file>   Analyze or rewrite a .jsonl session or a single JSON document.\n  restore <hash>  Restore a stored image/document payload to a file.\n\nOptions:\n  --yes           Write changes. Default is dry-run and writes nothing.\n  --all           Downgrade all image blocks, including when no user-message boundary is found.\n  --store <dir>   Enable source store. Bare --store uses ~/.image-cascade/store.\n  --out <file>    Restore output file. Default: ./restored-<hash12>.<ext>.\n  --json          Print machine-readable JSON statistics.\n  --version, -v   Print the CLI version.\n  --help, -h      Show this help.\n\nNotes:\n  JSONL mode uses two streaming passes and O(1) memory. Single JSON mode reads the whole file into memory.\n`;
+  return `image-cascade rescue <file> [--yes] [--all] [--json] [--store[=dir]]\nimage-cascade restore <hash> [--store <dir>] [--out <file>]\nimage-cascade hook claude-code [--store <dir>] [--json]\n\nRescue oversized image session files by downgrading historical image blocks.\n\nCommands:\n  rescue <file>     Analyze or rewrite a .jsonl session or a single JSON document.\n  restore <hash>    Restore a stored image/document payload to a file.\n  hook claude-code  Read a Claude Code hook payload (JSON) from stdin and archive\n                    historical images in that session transcript. Intended for a\n                    SessionEnd hook. Always uses a source store so everything is\n                    restorable; never fails the hook (runtime errors exit 0).\n\nOptions:\n  --yes           Write changes. Default is dry-run and writes nothing.\n  --all           Downgrade all image blocks, including when no user-message boundary is found.\n  --store <dir>   Enable source store. Bare --store uses ~/.image-cascade/store.\n  --out <file>    Restore output file. Default: ./restored-<hash12>.<ext>.\n  --json          Print machine-readable JSON statistics.\n  --version, -v   Print the CLI version.\n  --help, -h      Show this help.\n\nEnvironment:\n  ICC_DISABLE=1   Disable hook-triggered processing. Manual rescue/restore still run.\n  ICC_STORE_DIR   Override the default source store directory (~/.image-cascade/store).\n\nNotes:\n  JSONL mode uses two streaming passes and O(1) memory. Single JSON mode reads the whole file into memory.\n`;
 }
 
 async function cliVersion() {
@@ -169,6 +169,7 @@ async function transformSingleJson(file, opts, writePath) {
 async function rescue(file, opts) {
   try { await access(file); } catch { throw new Error(`File not found: ${file}`); }
   const mode = extname(file).toLowerCase() === ".jsonl" ? "jsonl" : "json";
+  const statBefore = await stat(file);
   const dryStats = mode === "jsonl" ? await transformJsonl(file, opts, null) : await transformSingleJson(file, opts, null);
   if (!opts.yes || !dryStats.changed) return dryStats;
   const temp = join(dirname(file), `.${basename(file)}.icc-tmp-${process.pid}-${Date.now()}`);
@@ -177,6 +178,11 @@ async function rescue(file, opts) {
     if (!writeStats.changed) {
       await unlink(temp).catch(() => {});
       return { ...writeStats, estimatedBytesAfter: writeStats.bytesBefore };
+    }
+    const statAfter = await stat(file);
+    if (statAfter.size !== statBefore.size || statAfter.mtimeMs !== statBefore.mtimeMs) {
+      await unlink(temp).catch(() => {});
+      throw new Error(`File changed while rescuing (another process may be writing it): ${file}. Nothing was modified; close the session and retry.`);
     }
     const backup = await nextBackupPath(file);
     await copyFile(file, backup);
@@ -189,12 +195,56 @@ async function rescue(file, opts) {
   }
 }
 
+function iccDisabled() {
+  const v = (process.env.ICC_DISABLE || "").trim().toLowerCase();
+  return v !== "" && v !== "0" && v !== "false";
+}
+
+async function readStdinWithTimeout(timeoutMs) {
+  if (process.stdin.isTTY) return null;
+  let data = "";
+  const timer = setTimeout(() => process.stdin.destroy(), timeoutMs);
+  try {
+    process.stdin.setEncoding("utf8");
+    for await (const chunk of process.stdin) data += chunk;
+  } catch {}
+  clearTimeout(timer);
+  return data.trim() || null;
+}
+
+async function hookCmd(opts) {
+  const say = (msg) => console.error(`image-cascade hook: ${msg}`);
+  try {
+    if (iccDisabled()) { say("ICC_DISABLE is set; skipping."); return null; }
+    const raw = await readStdinWithTimeout(3000);
+    if (!raw) { say("no hook payload on stdin; skipping."); return null; }
+    let input;
+    try { input = JSON.parse(raw); } catch { say("hook payload is not valid JSON; skipping."); return null; }
+    const transcript = typeof input.transcript_path === "string" ? input.transcript_path : null;
+    if (!transcript) { say("no transcript_path in hook payload; skipping."); return null; }
+    if (!(await fileExists(transcript))) { say(`transcript not found, skipping: ${transcript}`); return null; }
+    const stats = await rescue(transcript, { yes: true, all: false, store: opts.store || defaultStoreDir() });
+    if (stats.changed) say(`archived ${stats.downgraded} historical image/document blocks in ${transcript} (${stats.bytesBefore} -> ${stats.bytesAfter} bytes; backup: ${stats.backup})`);
+    else say(`nothing to archive in ${transcript}.`);
+    return stats;
+  } catch (err) {
+    say(`skipped: ${err?.message || err}`);
+    return null;
+  }
+}
+
+// Extension is cosmetic only — restored bytes are always exact regardless of
+// media type. Derivation is allowlisted ([a-z0-9]{1,8}) because mediaType
+// comes from payload data and ends up in a filename.
+const EXT_BY_MEDIA_TYPE = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/svg+xml": "svg", "image/x-icon": "ico", "image/vnd.microsoft.icon": "ico" };
+
 function extFor(mediaType) {
-  if (mediaType === "application/pdf") return "pdf";
-  if (mediaType === "image/jpeg") return "jpg";
-  if (mediaType === "image/webp") return "webp";
-  if (mediaType === "image/gif") return "gif";
-  return "png";
+  const known = EXT_BY_MEDIA_TYPE[mediaType];
+  if (known) return known;
+  const sub = /^[a-z]+\/([a-z0-9.+-]+)$/i.exec(mediaType || "")?.[1];
+  if (!sub) return "bin";
+  const cleaned = sub.replace(/^x-/, "").replace(/\+.*$/, "");
+  return /^[a-z0-9]{1,8}$/i.test(cleaned) ? cleaned.toLowerCase() : "bin";
 }
 
 async function restoreCmd(hash, opts) {
@@ -260,6 +310,16 @@ export async function main(argv = process.argv.slice(2)) {
   const [cmd, fileOrHash] = parsed.positionals;
   if (parsed.values.help || !cmd) { console.log(usage()); return 0; }
   try {
+    if (cmd === "hook") {
+      if (fileOrHash !== "claude-code") {
+        console.error(`error: unknown hook host "${fileOrHash ?? ""}". Supported: claude-code\n`);
+        console.error(usage());
+        return 1;
+      }
+      const stats = await hookCmd(parsed.values);
+      if (parsed.values.json && stats) console.log(JSON.stringify(stats, null, 2));
+      return 0;
+    }
     if (cmd === "rescue" && fileOrHash) {
       const stats = await rescue(fileOrHash, parsed.values);
       printStats(stats, Boolean(parsed.values.json), Boolean(parsed.values.store));

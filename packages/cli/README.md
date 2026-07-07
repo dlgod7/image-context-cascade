@@ -26,6 +26,19 @@ Options:
 - `--json` — machine-readable statistics.
 - `--version`, `-v` / `--help`, `-h`.
 
+## Claude Code SessionEnd hook
+
+`image-cascade hook claude-code` reads a Claude Code hook payload from stdin and archives that session's historical images. It always uses the source store, is fail-open, and is intended for `SessionEnd` hooks.
+
+```bash
+echo '{}' | image-cascade hook claude-code
+```
+
+Environment variables:
+
+- `ICC_DISABLE=1` — kill switch for hook-triggered processing.
+- `ICC_STORE_DIR=/path/to/store` — override the default store directory.
+
 ## Safety properties
 
 - **Dry-run by default** — nothing is written without `--yes`.

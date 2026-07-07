@@ -71,7 +71,9 @@ npx @image-cascade/cli restore a1b2c3d4e5f6 --out restored.png
 
 也可以 `npm install -g @image-cascade/cli` 全局安装——装出来的命令名是 `image-cascade`。
 
-两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 是显式 opt-in，默认把 source store 写到 `~/.image-cascade/store`，也可以传目录。
+两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 是显式 opt-in，默认把 source store 写到 `~/.image-cascade/store`，也可以传目录（用 `ICC_STORE_DIR` 环境变量可改默认位置）。
+
+Claude Code 还有免操心版本：`image-cascade hook claude-code` 从 stdin 读取 Claude Code 的 hook payload，自动归档该 session 的历史图片——见下面的安装指令。hook 触发的归档永远带 store（全部可找回），且永远不会让 hook 报错；`ICC_DISABLE=1` 可整体关闭。
 
 session 文件的位置：
 
@@ -82,26 +84,82 @@ session 文件的位置：
 
 ## 丢给你的 agent 一键搞定（复制即用）
 
-不想读文档的话，把下面这段直接粘给 Claude Code、Codex 或任何有 shell 的 coding agent，它会替你搞定：
+两条指令，各干各的事。**安装配置**把工具接进你 agent 的日常工作流，全程不读任何 session 文件；**体验对比**（可选）拿你已有的 session 量一量能省多少——只有它会碰 session 文件。两条都不预设你用的是哪个 agent：指令会让 agent 自己识别宿主，按宿主真实支持的能力来配。
+
+### 1）安装配置——接进日常工作流（不读任何 session 文件）
 
 ```text
-安装 image-cascade CLI 并压缩我过大的 AI agent session 文件。严格按以下步骤执行：
+为我配置 image-context-cascade，让我的 agent session 不再堆积过期的图片 payload。
+这是纯配置任务：过程中不要读取、列出或改写任何 session/transcript 文件。
 
-1. 运行：npm install -g @image-cascade/cli
-   验收：`image-cascade --version` 打印出版本号。如果不允许全局安装，下面所有 image-cascade 命令改用 `npx @image-cascade/cli`。
-2. 按体积列出我最大的 5 个 session 文件：
-   - Claude Code：~/.claude/projects/*/*.jsonl（Windows 在 %USERPROFILE%\.claude\projects\）
-   - Codex：~/.codex/sessions/*/*/*/rollout-*.jsonl（Windows 在 %USERPROFILE%\.codex\sessions\）
-3. 安全规则：绝不碰你当前这个会话自己的 session 文件。列表里如果有可能还开着的会话，先让我关掉，或者跳过它。
-4. 对每个候选文件先 dry-run：image-cascade rescue <文件>
-   这一步不写任何东西。记下它打印的 estimatedSavedChars 和 estimatedBytesAfter。
-5. 只对 dry-run 显示节省有意义（大于约 100 KB）的文件执行：
-   image-cascade rescue <文件> --yes --store
-   写入前会在原文件旁生成备份（.icc-backup）；--store 让每张被移除的图都能用 `image-cascade restore <hash>` 找回。
-6. 汇报一张表：文件、前后字节数、降级图片数、备份路径。不要删备份。
+1. 先确认你自己运行在哪个 agent 宿主里（Claude Code？Codex？Cursor？还是别的？）。
+   不要照抄下面的例子瞎猜——检查你的真实环境。
+2. 安装 CLI：npm install -g @image-cascade/cli
+   验收：image-cascade --version 能打印版本号。若不允许全局安装，下文的
+   image-cascade 一律改用 `npx @image-cascade/cli`。
+3. 按宿主能力配置最深一层自动化：
+   - Claude Code：把这条合并进 ~/.claude/settings.json 的 hooks.SessionEnd
+     （合并进已有 JSON，绝不整文件覆盖；写入前先给我看 diff）：
+       {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": "image-cascade hook claude-code", "timeout": 60}]}]}}
+     效果：每次会话结束时，该会话的历史图片自动归档成可找回的占位符（附自动
+     .icc-backup 备份），之后 resume 和后续请求都轻装上阵。会话进行中的请求任何
+     外部工具都插不进手——这已经是 Claude Code 今天允许的最深集成。
+   - Codex：Codex 目前没有会话结束 hook，改为在 ~/.codex/AGENTS.md 追加一个带
+     标记的区块（追加，绝不覆盖；保留标记以便日后干净卸载）：
+       <!-- image-context-cascade:start -->
+       ~/.codex/sessions 下的 session 文件会堆积 base64 图片，烧 token。当我提到
+       session 变重变慢时，主动提议：`image-cascade rescue <文件>`（先 dry-run，
+       经我确认后 `--yes --store`）。绝不重写当前打开的 session。形如
+       [Image <hash> omitted; restorable via image-cascade restore <hash>] 的占位符
+       表示原图存在本地——需要回看时执行那条 restore 命令即可。
+       <!-- image-context-cascade:end -->
+   - 其他宿主：检查你的宿主有没有 (a) 请求构造钩子——有则优先用 npm 中间件
+     （`npm install image-context-cascade`，见 Quick start）；或 (b) 会传 transcript
+     路径的会话生命周期钩子——有则把 CLI 挂上去；或 (c) 都没有——那就记下
+     `npx @image-cascade/cli rescue <文件>` 可手动使用，并仿照上面 Codex 区块往你
+     宿主的指令文件（AGENTS.md 或等价物）里加一段说明。
+4. 汇报：你到底改了什么、改在哪、如何撤销（删除那条 hook / 那个标记区块），并说明
+   ICC_DISABLE=1 是关闭一切 hook 自动处理的总开关。
 ```
 
-当前轮图片永远不被触碰，重写是原子且幂等的，每张被移除的图都能从备份找回——开了 `--store` 还能从本地 store 按 hash 找回。
+### 2）体验对比（可选）——拿已有 session 量一量
+
+只有这条会碰 session 文件：先列文件、给你看数字，你批准哪个才改哪个：
+
+```text
+给我看看 image-context-cascade 在我已有的 agent session 上能省多少。
+先说明：这个任务会列出我的 session 文件，并在我批准后重写其中一部分（有备份）。
+
+1. 确认 CLI 可用（image-cascade --version，或改用 npx @image-cascade/cli）。
+2. 找到我这个宿主的 session 目录（Claude Code：~/.claude/projects/*/*.jsonl；
+   Codex：~/.codex/sessions/*/*/*/rollout-*.jsonl；其他宿主：自己定位 transcript
+   目录——Windows 下在 %USERPROFILE% 里）。按体积列出最大的 5 个。
+3. 安全规则：绝不碰当前这个对话自己的 session 文件；可能在别的窗口开着的
+   session 一律跳过（拿不准就问我）。
+4. 逐个 dry-run：image-cascade rescue <文件>   （不写任何东西；记下数字）
+5. 把 dry-run 结果表给我看，问我批准哪些。只对批准的文件执行：
+   image-cascade rescue <文件> --yes --store
+   （每个文件旁生成 .icc-backup 备份；--store 让每张被移除的图都能用
+   `image-cascade restore <hash>` 找回。）
+6. 汇报：文件、前后字节数、归档图片数、备份路径。不要删备份。
+```
+
+## 装好之后，日常长什么样（分宿主）
+
+| 宿主 | 机制 | 你得到什么 |
+|---|---|---|
+| 自己维护的 agent / 框架（中间件） | 请求构造处调 `cascadeImages()` | 全自动，每次请求实时生效 |
+| Claude Code | `SessionEnd` hook → `image-cascade hook claude-code` | 每次会话结束自动归档；resume 加载的就是瘦身后的 transcript |
+| Codex | `AGENTS.md` 软指令 + 手动 `rescue` | 半自动——agent 主动提议，你批准 |
+| 其他任意 agent | `npx @image-cascade/cli rescue` | 手动，任何 JSON/JSONL transcript 都能用 |
+
+所有模式共守的设计保证：
+
+- **归档，不是删除。** hook 触发的处理永远带 source store 加 `.icc-backup`，每张被归档的图都能按 hash 找回。不存在不可恢复的丢失。
+- **不做内容判断。** 分类是位置化、确定性的——当前轮永远原样保留。没有任何模型在替你决定哪张图"看起来重要"。
+- **无常驻占用。** 没有守护进程、没有监听；hook 只在会话结束时跑几毫秒，没东西可归档时就是幂等空转。
+- **并发写入守卫。** `rescue` 在换入重写结果前会复查文件的 size/mtime，发现中途被别的进程动过就整体放弃。
+- **总开关。** `ICC_DISABLE=1` 关闭一切 hook 自动处理（手动命令不受影响）；`ICC_STORE_DIR` 可改默认 store 位置。卸载 = 删掉那条 hook 或那个标记区块。
 
 ## 把降级的图找回来
 
@@ -182,14 +240,15 @@ Adapter 是宿主钩子与 core 之间的胶水——[Pi 参考 adapter](package
 - 远程 URL 引用图不会进入 store。Source store 只保存 payload 中已经存在的 base64/data URI 字节，不主动抓取 URL。
 - 仅支持精确字节身份：同一张图片重新编码或缩放后 hash 不同；感知哈希属于未来研究方向。
 - Warm 缩略图需要宿主注入确定性的 `thumbnailer`。Core 和 CLI 都不依赖 Sharp 或其他图像处理库。
-- 没有请求构造钩子的封闭 agent（如今天的 Claude Code 和 Codex）无法在进程内运行本中间件；请改用 [rescue CLI](#抢救超大-session-cli) 离线重写 session 文件。
+- 没有请求构造钩子的封闭 agent 无法在进程内运行本中间件。Claude Code 拿到的是次优解——通过 `SessionEnd` hook 在会话边界自动归档；Codex 今天只能手动/由 agent 提议（它新出的 hooks 体系还没有会话结束事件，而会话中途改写 transcript 比在边界处理风险更高）。
 
 ## 路线图
 
 - **v0.1**—— core 与 positional + tracker 双策略、三种 provider 图片格式加 Anthropic document 附件的内置 matcher、session 抢救 CLI、Pi 参考 adapter、含语言无关语料的 conformance 套件、经验证的基准测试。
 - **v0.2**—— opt-in source store、hot/warm/cold 三层降级模型、注入式 thumbnailer 接口、可找回占位符、`image-cascade restore`、同 payload 精确字节去重，以及 Claude Code 通过 shell + 文件工具完成的零组件找回闭环。
-- **v0.2.1（本版本）**—— Codex rollout session 端到端实测通过；新增 `image_generation_call` / `image_generation_end` 裸 base64 result 的 matcher；遍历引擎现在也匹配消息列表的 item 级块和对象字段块，不再只认 content 数组成员。
-- **v0.3 计划**—— 预算驱动降级、更丰富的宿主 adapter，以及面向没有 shell 工具的宿主的 optional MCP server。
+- **v0.2.1**—— Codex rollout session 端到端实测通过；新增 `image_generation_call` / `image_generation_end` 裸 base64 result 的 matcher；遍历引擎现在也匹配消息列表的 item 级块和对象字段块，不再只认 content 数组成员。
+- **v0.2.2（本版本）**—— Claude Code 免操心集成（`image-cascade hook claude-code` + SessionEnd hook）、`ICC_DISABLE` 总开关、`ICC_STORE_DIR`、并发写入守卫、解码字节级 magic 嗅探（新增 BMP/TIFF/AVIF/HEIC，修复 RIFF 误判）、restore 文件名按 media type 推导。
+- **v0.3 计划**—— 预算驱动降级、更多生命周期 hook 宿主（Cursor 已有 `sessionEnd`；Codex hooks 刚上线但还缺这个事件）、面向没有 shell 工具的宿主的 optional MCP server，以及本地 proxy 模式——让任意 agent 都能拿到请求时降级。
 - **未来研究** —— 近似图片的感知哈希；带安全隐私默认值的跨会话持久 tracker。
 
 ## 先行工作与致谢

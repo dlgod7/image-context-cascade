@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Added: `image-cascade hook claude-code` subcommand — reads a Claude Code hook payload from stdin and archives that session's historical images (always stores, fail-open, for SessionEnd hooks).
+- Added: `ICC_DISABLE=1` kill switch for hook-triggered processing; `ICC_STORE_DIR` overrides the default store directory.
+- Added: concurrent-write guard — `rescue` aborts (nothing modified) if the file changes between scan and swap.
+- Changed: bare-base64 magic sniffing now decodes bytes instead of matching base64 prefixes — adds BMP/TIFF/AVIF/HEIC/HEIF, fixes RIFF-but-not-WEBP false positives (e.g. WAV).
+- Changed: `restore` derives the output extension from the stored media type (e.g. .svg) instead of a 4-entry allowlist defaulting to .png.
+
 ## 0.2.1
 
 - Added an `openai-image-generation` matcher: bare-base64 `result` fields on `image_generation_call` response items and `image_generation_end` events (Codex stores each generated image twice this way). Media type is sniffed from the base64 magic; non-image results are never touched.

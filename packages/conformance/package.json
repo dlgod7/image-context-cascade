@@ -1,6 +1,6 @@
 {
   "name": "@image-cascade/conformance",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Conformance suite and corpus for image-context-cascade adapters.",
@@ -44,7 +44,7 @@
     "corpus"
   ],
   "dependencies": {
-    "image-context-cascade": "0.2.1"
+    "image-context-cascade": "0.2.2"
   },
   "devDependencies": {}
 }

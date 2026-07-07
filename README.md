@@ -72,7 +72,9 @@ npx @image-cascade/cli restore a1b2c3d4e5f6 --out restored.png
 
 Or install globally with `npm install -g @image-cascade/cli` — the binary is named `image-cascade`.
 
-Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` is opt-in and writes a local content-addressed source store under `~/.image-cascade/store` unless you pass a directory.
+Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` is opt-in and writes a local content-addressed source store under `~/.image-cascade/store` unless you pass a directory (override the default with `ICC_STORE_DIR`).
+
+For Claude Code there is a hands-free variant: `image-cascade hook claude-code` reads a Claude Code hook payload from stdin and archives that session's historical images automatically — see the setup prompt below. Hook-triggered runs always store (restorable) and never fail the hook; `ICC_DISABLE=1` turns them off.
 
 Where session files live:
 
@@ -83,26 +85,83 @@ Where session files live:
 
 ## Set up with your coding agent (one paste)
 
-You don't need to read the docs — paste this into Claude Code, Codex, or any coding agent with shell access, and it will do the rest:
+Two separate prompts, because they do different jobs. **Setup** configures your agent for day-to-day use and never reads a session file. **Demo** (optional) measures savings on your existing sessions — it is the only one that touches them. Neither assumes which agent you use: the instruction tells the agent to identify its own host and configure what that host actually supports.
+
+### 1) Setup — configure my agent (reads no session files)
 
 ```text
-Install the image-cascade CLI and shrink my oversized AI-agent session files. Follow these steps exactly:
+Set up image-context-cascade so my agent sessions stop accumulating stale image payloads.
+This is configuration only: do NOT read, list, or rewrite any session/transcript files in this task.
 
-1. Run: npm install -g @image-cascade/cli
-   Verify: `image-cascade --version` prints a version number. If global installs are not allowed, use `npx @image-cascade/cli` instead of `image-cascade` everywhere below.
-2. List my 5 largest session files by size:
-   - Claude Code: ~/.claude/projects/*/*.jsonl (on Windows: %USERPROFILE%\.claude\projects\)
-   - Codex: ~/.codex/sessions/*/*/*/rollout-*.jsonl (on Windows: %USERPROFILE%\.codex\sessions\)
-3. Safety rules: never touch the session file of the conversation you are running in right now. If a listed session might still be open in another window, ask me to close it first or skip it.
-4. For each remaining file, dry-run: image-cascade rescue <file>
-   This writes nothing. Note the "estimatedSavedChars" and "estimatedBytesAfter" it prints.
-5. Only where the dry-run shows meaningful savings (more than ~100 KB), apply:
-   image-cascade rescue <file> --yes --store
-   This creates a backup next to the original (.icc-backup) before rewriting, and --store keeps every removed image restorable via `image-cascade restore <hash>`.
-6. Report a table: file, bytes before → after, images downgraded, backup path. Do not delete the backups.
+1. Identify which agent host YOU are running in (Claude Code? Codex? Cursor? something else?).
+   Do not guess from these examples — check your actual environment.
+2. Install the CLI: npm install -g @image-cascade/cli
+   Verify: image-cascade --version prints a version. If global installs are not allowed,
+   use `npx @image-cascade/cli` in place of `image-cascade` below.
+3. Configure the deepest automation your host supports:
+   - Claude Code: merge this entry into ~/.claude/settings.json under hooks.SessionEnd
+     (merge into existing JSON — never overwrite the file; show me a diff before writing):
+       {"hooks": {"SessionEnd": [{"hooks": [{"type": "command", "command": "image-cascade hook claude-code", "timeout": 60}]}]}}
+     Effect: every time a session ends, its historical images are archived to restorable
+     placeholders (with an automatic .icc-backup), so future resumes and requests stay lean.
+     The current session's in-flight requests are out of reach for any external tool — this
+     is the deepest integration Claude Code allows today.
+   - Codex: Codex has no session-end hook today, so add a marked block to ~/.codex/AGENTS.md
+     (append; never overwrite; keep the markers so it can be removed cleanly):
+       <!-- image-context-cascade:start -->
+       Session files under ~/.codex/sessions accumulate base64 images that burn tokens.
+       When I mention heavy/slow sessions, offer: `image-cascade rescue <file>` (dry-run first,
+       `--yes --store` after my approval). Never rewrite the currently open session. A placeholder
+       like [Image <hash> omitted; restorable via image-cascade restore <hash>] means the original
+       is stored locally — run that restore command if the image is needed again.
+       <!-- image-context-cascade:end -->
+   - Other hosts: check whether your host has (a) a request-construction hook — then prefer
+     the npm middleware (`npm install image-context-cascade`, see "Quick start"); or (b) a
+     session-lifecycle hook that passes a transcript path — then wire the CLI there; or
+     (c) neither — then note that `npx @image-cascade/cli rescue <file>` works manually and
+     add a note to your host's instruction file (AGENTS.md or equivalent) like the Codex block.
+4. Report: exactly what you changed and where, how to undo it (delete the hook entry / the
+   marked block), and that ICC_DISABLE=1 disables all hook-triggered processing as a kill switch.
 ```
 
-The current-turn image is never touched, the rewrite is atomic and idempotent, and every removed image is recoverable from the backup — and from the local store when `--store` is on.
+### 2) Demo (optional) — measure it on my existing sessions
+
+This one **does** list session files and, only after showing you numbers, rewrites the ones you approve:
+
+```text
+Show me what image-context-cascade would save on my existing agent sessions.
+Heads-up: this task lists my session files and rewrites the ones I approve (with backups).
+
+1. Ensure the CLI is available (image-cascade --version, or use npx @image-cascade/cli).
+2. Find MY host's session directory (Claude Code: ~/.claude/projects/*/*.jsonl; Codex:
+   ~/.codex/sessions/*/*/*/rollout-*.jsonl; other hosts: locate your transcript directory —
+   on Windows these live under %USERPROFILE%). List the 5 largest files by size.
+3. Safety: never touch the session file of THIS conversation, and skip any session that
+   might be open in another window (ask me if unsure).
+4. Dry-run each candidate: image-cascade rescue <file>   (writes nothing; note the numbers)
+5. Show me the dry-run table and ask which files to apply. For approved files only:
+   image-cascade rescue <file> --yes --store
+   (.icc-backup is created next to each file; --store makes every removed image restorable
+   via `image-cascade restore <hash>`.)
+6. Report: file, bytes before → after, images archived, backup path. Do not delete backups.
+```
+
+## What runs day-to-day (per host)
+
+| Host | Mechanism | What you get |
+|---|---|---|
+| Your own agent / framework (middleware) | `cascadeImages()` at request construction | Fully automatic, every request |
+| Claude Code | `SessionEnd` hook → `image-cascade hook claude-code` | Automatic at every session end; resumes load the lean transcript |
+| Codex | `AGENTS.md` guidance + manual `rescue` | Semi-automatic — the agent proposes, you approve |
+| Anything else | `npx @image-cascade/cli rescue` | Manual, works on any JSON/JSONL transcript |
+
+Design guarantees that hold in every mode:
+
+- **Archive, not delete.** Hook-triggered runs always use the source store plus a `.icc-backup`; every archived image is restorable by hash. Nothing is ever unrecoverable.
+- **No content judgement.** Classification is positional and deterministic — the current turn is always kept intact. No model decides which of your images "look important".
+- **Nothing resident.** No daemon, no watcher; the hook runs for milliseconds at session end and is a no-op when there is nothing to archive (idempotent).
+- **Concurrent-write guard.** `rescue` re-checks the file's size/mtime before swapping in the rewrite and aborts if another process touched it mid-flight.
+- **Kill switch.** `ICC_DISABLE=1` disables hook-triggered processing (manual commands still work); `ICC_STORE_DIR` relocates the default store. Uninstall = delete the hook entry or marked block.
 
 ## Bring a downgraded image back
 
@@ -183,14 +242,15 @@ New provider format? Implement a `BlockMatcher` (`match(block)` / `replace(block
 - Remote URL references are not stored. The source store persists base64/data-URI bytes that are present in the payload; it does not fetch URLs.
 - Exact-byte identity only: the same image re-encoded or resized hashes differently. Perceptual hashing is future research.
 - Warm thumbnails require a host-injected deterministic `thumbnailer`. Core and CLI do not depend on Sharp or any other image-processing library.
-- Closed agents without request-construction hooks (e.g. Claude Code and Codex today) cannot run the middleware in-process; use the [rescue CLI](#rescue-an-oversized-session-cli) to rewrite session files offline instead.
+- Closed agents without request-construction hooks cannot run the middleware in-process. Claude Code gets the next-best thing — automatic archiving at session boundaries via its `SessionEnd` hook; Codex is manual/agent-suggested today (its new hooks system has no session-end event yet, and transcript rewrite mid-session is riskier than at boundaries).
 
 ## Roadmap
 
 - **v0.1** — core with positional + tracker strategies, built-in matchers for three provider image formats plus Anthropic document attachments, session rescue CLI, Pi reference adapter, conformance harness with a language-neutral corpus, verified benchmarks.
 - **v0.2** — opt-in source store, hot/warm/cold tiered downgrade model, injected thumbnailer interface, restorable placeholders, `image-cascade restore`, same-payload byte dedupe, and the Claude Code zero-component restore loop through shell + file tools.
-- **v0.2.1 (this release)** — Codex rollout sessions verified end-to-end; new matcher for bare-base64 `image_generation_call` / `image_generation_end` results; traversal now catches item-level and object-field blocks, not just content-array members.
-- **v0.3 planned** — budget-driven downgrade, richer host adapters, and an optional MCP server for hosts that do not expose a shell tool.
+- **v0.2.1** — Codex rollout sessions verified end-to-end; new matcher for bare-base64 `image_generation_call` / `image_generation_end` results; traversal now catches item-level and object-field blocks, not just content-array members.
+- **v0.2.2 (this release)** — hands-free Claude Code integration (`image-cascade hook claude-code` + SessionEnd hook), `ICC_DISABLE` kill switch, `ICC_STORE_DIR`, concurrent-write guard, decoded-byte magic sniffing (adds BMP/TIFF/AVIF/HEIC, fixes RIFF false positives), format-derived restore filenames.
+- **v0.3 planned** — budget-driven downgrade, more lifecycle-hook hosts (Cursor ships `sessionEnd`; Codex hooks are new and still lack one), an optional MCP server for hosts without a shell tool, and a local proxy mode for request-time downgrade under any agent.
 - **Future research** — perceptual hashing for near-duplicate images; persistent cross-session trackers with safe privacy defaults.
 
 ## Prior art & acknowledgements

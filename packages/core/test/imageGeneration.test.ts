@@ -75,4 +75,32 @@ describe("openai-image-generation matcher", () => {
     const b = cascadeImages(payload()).payload.items[1] as { result: string };
     expect(a.result).toBe(b.result);
   });
+
+  test("decoded_magic_sniff_covers_bmp_tiff_iso_bmff", () => {
+    const pad = (bytes: number[]) => Buffer.concat([Buffer.from(bytes), Buffer.alloc(256)]).toString("base64");
+    const cases: Array<[number[], string]> = [
+      [[0x42, 0x4d, 0x9a, 0x00], "image/bmp"],
+      [[0x49, 0x49, 0x2a, 0x00], "image/tiff"],
+      [[0x4d, 0x4d, 0x00, 0x2a], "image/tiff"],
+      [[0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66], "image/avif"], // ....ftypavif
+      [[0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63], "image/heic"], // ....ftypheic
+      [[0x52, 0x49, 0x46, 0x46, 0x12, 0x34, 0x56, 0x78, 0x57, 0x45, 0x42, 0x50], "image/webp"], // RIFF....WEBP
+    ];
+    for (const [bytes, mediaType] of cases) {
+      const b64 = pad(bytes);
+      expect(imageGenerationMatcher.extract!(genCall(b64))).toEqual({ data: b64, mediaType });
+    }
+  });
+
+  test("riff_without_webp_chunk_not_matched", () => {
+    // A WAV file is RIFF too; the old base64-prefix sniff would have eaten it.
+    const wav = Buffer.concat([Buffer.from("RIFF\x10\x00\x00\x00WAVEfmt "), Buffer.alloc(256)]).toString("base64");
+    expect(imageGenerationMatcher.match(genCall(wav))).toBeNull();
+  });
+
+  test("padding_or_invalid_base64_head_fails_closed", () => {
+    for (const junk of ["====" + "A".repeat(300), "!!notbase64" + "A".repeat(300)]) {
+      expect(imageGenerationMatcher.match(genCall(junk))).toBeNull();
+    }
+  });
 });

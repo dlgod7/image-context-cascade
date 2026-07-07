@@ -1,6 +1,6 @@
 {
   "name": "image-context-cascade",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Image context cascade middleware for LLM and agent message payloads.",
