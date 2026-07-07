@@ -22,10 +22,17 @@ export function anthropicDocumentMatcher(hasher: (data: string) => string): Bloc
     formatId: "anthropic-document",
     match(block: unknown) {
       if (!block || typeof block !== "object") return null;
-      const b = block as { type?: unknown; source?: { type?: unknown; data?: unknown } };
+      const b = block as { type?: unknown; source?: { type?: unknown; media_type?: unknown; data?: unknown } };
       if (b.type !== "document" || b.source?.type !== "base64" || typeof b.source.data !== "string" || b.source.data.length === 0) return null;
       return { identity: cachedIdentity(identityCache, block, b.source.data, hasher), approxChars: b.source.data.length + ENVELOPE_CHARS };
     },
     replace(_block: unknown, text: string) { return { type: "text", text }; },
+    extract(block: unknown) {
+      if (!block || typeof block !== "object") return null;
+      const b = block as { type?: unknown; source?: { type?: unknown; media_type?: unknown; data?: unknown } };
+      if (b.type !== "document" || b.source?.type !== "base64" || typeof b.source.data !== "string" || b.source.data.length === 0) return null;
+      return { data: b.source.data, mediaType: typeof b.source.media_type === "string" ? b.source.media_type : "application/octet-stream" };
+    },
+    // No replaceWithImage: Anthropic document blocks are not image blocks, and thumbnailing PDFs is host-specific.
   };
 }

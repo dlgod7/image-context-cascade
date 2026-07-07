@@ -6,8 +6,8 @@ test("adapter_conformance_suite", async () => {
   expect(result.passed).toBe(true);
 });
 
-test("corpus_conformance_suite", () => {
-  const result = runCorpusConformance();
+test("corpus_conformance_suite", async () => {
+  const result = await runCorpusConformance();
   expect(result.cases).toBeGreaterThanOrEqual(6);
   expect(result.passed).toBe(true);
 });

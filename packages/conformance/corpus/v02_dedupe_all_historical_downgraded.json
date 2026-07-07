@@ -1,0 +1,57 @@
+{
+  "name": "v02_dedupe_all_historical_downgraded",
+  "description": "When every copy of a same-hash image is historical, dedupe must not retain any original: all copies downgrade to placeholders",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "djAyLWR1cGU="
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "djAyLWR1cGU="
+            }
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "djAyLWR1cGU="
+            }
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "now"
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional",
+    "async": true
+  },
+  "expect": {
+    "mutated": true,
+    "current": 0,
+    "downgraded": 3,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": true
+  }
+}

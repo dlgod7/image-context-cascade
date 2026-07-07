@@ -1,0 +1,58 @@
+{
+  "name": "v02_dedupe_historical_ref_to_current_copy",
+  "description": "A historical duplicate of an image that also appears in the current turn is replaced by a reference; the current-turn original stays intact",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "djAyLWN1cnJlbnQ="
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "ok"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "look again"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "djAyLWN1cnJlbnQ="
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional",
+    "async": true
+  },
+  "expect": {
+    "mutated": true,
+    "current": 1,
+    "downgraded": 1,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": false
+  }
+}

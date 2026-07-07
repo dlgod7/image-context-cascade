@@ -1,0 +1,5 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`G. v0.2 source store, tiers, and restore inv15_async_without_new_options_matches_sync_output 1`] = `"[Image abcdef123456 omitted from this provider request: it appeared in an earlier turn. Use the prior image summary in the conversation unless the user explicitly asks to inspect the original image again.]"`;
+
+exports[`G. v0.2 source store, tiers, and restore store_enabled_placeholder_snapshot_frozen 1`] = `"[Image abcdef123456 omitted; restorable via image-cascade restore abcdef123456.]"`;

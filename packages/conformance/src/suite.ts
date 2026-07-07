@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { cascadeImages, defaultPlaceholder, imageIdentity, InMemoryTracker, trackerStrategy, type CascadeTelemetry } from "image-context-cascade";
+import { cascadeImages, cascadeImagesAsync, defaultPlaceholder, imageIdentity, InMemoryTracker, trackerStrategy, type CascadeTelemetry, type SourceStore, type StoredImage } from "image-context-cascade";
 
 export interface AdapterHarness {
   name: string;
@@ -32,7 +32,7 @@ type CorpusCase = {
   name: string;
   description: string;
   payload: unknown;
-  options?: { strategy?: "positional" | "tracker"; currentHashesOf?: string[] };
+  options?: { strategy?: "positional" | "tracker"; currentHashesOf?: string[]; async?: boolean; store?: boolean; dedupe?: boolean };
   expect: { mutated: boolean; current: number; downgraded: number; unknownIntact: number; downgradedPlaceholderStable: boolean };
 };
 
@@ -48,7 +48,7 @@ function getPath(root: unknown, path: string): unknown {
 function imageDataFromBlock(block: unknown): string {
   if (!block || typeof block !== "object") throw new Error("block path did not resolve to an object");
   const b = block as { type?: unknown; source?: { data?: unknown }; image_url?: unknown };
-  if (b.type === "image" && typeof b.source?.data === "string") return b.source.data;
+  if ((b.type === "image" || b.type === "document") && typeof b.source?.data === "string") return b.source.data;
   const raw = typeof b.image_url === "string" ? b.image_url : (b.image_url && typeof b.image_url === "object" ? (b.image_url as { url?: unknown }).url : undefined);
   if (typeof raw === "string") return raw.startsWith("data:") ? raw.split(",", 2)[1] ?? raw : raw;
   throw new Error("unsupported block in currentHashesOf");
@@ -65,13 +65,24 @@ export function loadCorpusCases(): CorpusCase[] {
     .map((name) => JSON.parse(readFileSync(join(corpusDir(), name), "utf8")) as CorpusCase);
 }
 
-export function runCorpusConformance(): CorpusRunResult {
+function memoryStore(): SourceStore {
+  const map = new Map<string, StoredImage>();
+  return {
+    async put(hash, image) { map.set(hash, image); },
+    async get(hash) { return map.get(hash) ?? null; },
+    async has(hash) { return map.has(hash); },
+  };
+}
+
+export async function runCorpusConformance(): Promise<CorpusRunResult> {
   const checks: string[] = [];
   for (const c of loadCorpusCases()) {
     const options = c.options?.strategy === "tracker"
       ? { strategy: trackerStrategy({ tracker: new InMemoryTracker(), currentTurnHashes: new Set((c.options.currentHashesOf ?? []).map((path) => imageIdentity(imageDataFromBlock(getPath(c.payload, path))).hash)) }) }
       : {};
-    const result = cascadeImages(c.payload, options);
+    const result = c.options?.async
+      ? await cascadeImagesAsync(c.payload, { ...options, ...(c.options.store ? { store: memoryStore() } : {}), ...(c.options.dedupe === false ? { dedupe: false } : {}) })
+      : cascadeImages(c.payload, options);
     const t = result.telemetry as CascadeTelemetry;
     const ok = result.mutated === c.expect.mutated && t.current === c.expect.current && t.downgraded === c.expect.downgraded && t.unknownIntact === c.expect.unknownIntact;
     checks.push(ok ? `${c.name}: ok` : `${c.name}: failed`);

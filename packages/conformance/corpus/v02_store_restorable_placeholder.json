@@ -1,0 +1,55 @@
+{
+  "name": "v02_store_restorable_placeholder",
+  "description": "Async store-enabled cascade downgrades a historical Anthropic image to a restorable placeholder while retaining current text boundary",
+  "payload": {
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "old"
+          },
+          {
+            "type": "image",
+            "source": {
+              "type": "base64",
+              "media_type": "image/png",
+              "data": "djAyLXN0b3JlLW9sZA=="
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "seen"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "now"
+          }
+        ]
+      }
+    ]
+  },
+  "options": {
+    "strategy": "positional",
+    "async": true,
+    "store": true
+  },
+  "expect": {
+    "mutated": true,
+    "current": 0,
+    "downgraded": 1,
+    "unknownIntact": 0,
+    "downgradedPlaceholderStable": false
+  }
+}

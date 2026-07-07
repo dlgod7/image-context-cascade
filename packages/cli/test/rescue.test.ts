@@ -3,6 +3,7 @@ import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { imageIdentity } from "image-context-cascade";
 
 const cli = join(import.meta.dir, "..", "src", "main.js");
 const b64 = (label: string) => Buffer.from(`${label}:image`).toString("base64");
@@ -13,16 +14,18 @@ async function tempDir() {
   return mkdtemp(join(tmpdir(), "icc-cli-"));
 }
 
+async function runCli(args: string[] = []) {
+  const proc = Bun.spawn(["bun", cli, ...args], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  const trimmed = stdout.trim();
+  return { stdout, stderr, code, json: trimmed.startsWith("{") ? JSON.parse(trimmed) : undefined };
+}
+
 async function runRescue(file: string, args: string[] = []) {
   const proc = Bun.spawn(["bun", cli, "rescue", file, ...args], { stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
-  return { stdout, stderr, code, json: stdout.trim() ? JSON.parse(stdout) : undefined };
-}
-
-async function runCli(args: string[]) {
-  const proc = Bun.spawn(["bun", cli, ...args], { stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
-  return { stdout, stderr, code };
+  const trimmed = stdout.trim();
+  return { stdout, stderr, code, json: trimmed.startsWith("{") ? JSON.parse(trimmed) : undefined };
 }
 
 function line(obj: unknown) {
@@ -158,6 +161,47 @@ describe("rescue CLI", () => {
     expect(existsSync(`${file}.icc-backup`)).toBe(true);
     expect(await readFile(`${file}.icc-backup`, "utf8")).toBe(content);
     expect(await readFile(file, "utf8")).toContain("omitted from this provider request");
+  });
+
+  test("rescue_store_and_restore_e2e", async () => {
+    const dir = await tempDir();
+    const store = join(dir, "store");
+    const file = join(dir, "store.jsonl");
+    const data = b64("restore-cli");
+    const original = Buffer.from(data, "base64");
+    await writeFile(file, line({ role: "user", content: [anthropic("restore-cli")] }) + "\n" + line({ role: "user", content: [text("now")] }) + "\n");
+    const rescue = await runRescue(file, ["--all", "--yes", "--store", store, "--json"]);
+    expect(rescue.code).toBe(0);
+    expect(rescue.json.stored).toBeGreaterThanOrEqual(1);
+    expect(await readFile(file, "utf8")).toContain("restorable via image-cascade restore");
+    const hash = imageIdentity(data).hash;
+    const out = join(dir, "restored.png");
+    const restored = await runCli(["restore", hash, "--store", store, "--out", out, "--json"]);
+    expect(restored.code).toBe(0);
+    expect(await readFile(out)).toEqual(original);
+  });
+
+  test("restore_accepts_short_hash_from_placeholder", async () => {
+    const dir = await tempDir();
+    const store = join(dir, "store");
+    const file = join(dir, "short.jsonl");
+    const data = b64("short-hash");
+    await writeFile(file, line({ role: "user", content: [anthropic("short-hash")] }) + "\n" + line({ role: "user", content: [text("now")] }) + "\n");
+    await runRescue(file, ["--all", "--yes", "--store", store]);
+    const rewritten = await readFile(file, "utf8");
+    const short = /restorable via image-cascade restore ([0-9a-f]{12})/.exec(rewritten)?.[1];
+    expect(short).toBe(imageIdentity(data).shortHash);
+    const out = join(dir, "restored-short.png");
+    const restored = await runCli(["restore", short!, "--store", store, "--out", out, "--json"]);
+    expect(restored.code).toBe(0);
+    expect(restored.json.hash).toBe(imageIdentity(data).hash);
+    expect(await readFile(out)).toEqual(Buffer.from(data, "base64"));
+  });
+
+  test("restore_rejects_non_hex_hash_input", async () => {
+    const result = await runCli(["restore", "../../etc/passwd", "--store", "whatever"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("Invalid hash");
   });
 
   test("rescue_claude_code_session_shape", async () => {
