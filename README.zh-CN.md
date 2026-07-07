@@ -65,6 +65,8 @@ npx @image-cascade/cli rescue path/to/session.jsonl        # dry-run：展示能
 npx @image-cascade/cli rescue path/to/session.jsonl --yes  # 先备份原文件，再重写
 ```
 
+也可以 `npm install -g @image-cascade/cli` 全局安装——装出来的命令名是 `image-cascade`。
+
 两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。真实 381 行 Claude Code session 实测：**6.26 MB → 1.36 MB（−78%）**，35 个历史附件被降级，每一行仍是合法 JSON，当前轮内容一字未动。
 
 ## 工作原理

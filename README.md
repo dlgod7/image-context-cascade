@@ -66,6 +66,8 @@ npx @image-cascade/cli rescue path/to/session.jsonl        # dry-run: shows what
 npx @image-cascade/cli rescue path/to/session.jsonl --yes  # backs up the original, then rewrites
 ```
 
+Or install globally with `npm install -g @image-cascade/cli` — the binary is named `image-cascade`.
+
 Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. Measured on a real 381-line Claude Code session: **6.26 MB → 1.36 MB (−78%)**, 35 historical attachments downgraded, every line still valid JSON, current-turn content untouched.
 
 ## How it works
