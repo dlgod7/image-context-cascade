@@ -35,7 +35,7 @@ Measured on a real 1.3 MB PNG payload: **1,296,014 chars → 315 chars (−99.98
 
 - **Not a prompt technique.** A prompt cannot delete bytes from the request payload; this is middleware.
 - **Not generic context compression.** It only manages images. Your text history is untouched.
-- **Not automatic for every agent.** Full per-request automation needs a request-construction hook (Pi has one; so does anything you build). Hosts without one get session-boundary hooks or the CLI — the [per-host table](#what-runs-day-to-day-per-host) below is honest about which is which.
+- **Not automatic for every agent.** For fully automatic per-request handling, the host must provide request-construction hooks (Pi does; your own custom agent does too). For hosts that lack these—like Claude Code, Codex, etc.—the fallback is to use session-boundary hooks or the CLI — the [per-host table](#what-runs-day-to-day-per-host) .
 
 ## Get started — one paste to your agent
 
@@ -234,6 +234,10 @@ Related projects solving *different* problems:
 
 - [pi-vision-proxy](https://github.com/pungggi/pi-vision-proxy) and [opencode-vision-paste](https://github.com/wsaaaqqq/opencode-vision-paste) route images through a vision model so *text-only* models can use them. They make images readable; `image-context-cascade` manages the lifecycle of images a *multimodal* model has already read. The two are complementary.
 - [context-cascade](https://github.com/DNYoussef/context-cascade) is a Claude Code plugin architecture for layered context loading — no relation beyond the name.
+
+## Acknowledgments
+1. Thanks to the linux.do community for the feedback, discussions, and inspiration during the development process.
+2. Thanks to Fable-5 (under Claude Code) for their contributions to the project.
 
 ## License
 
