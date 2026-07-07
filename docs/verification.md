@@ -388,3 +388,52 @@ Use conformance for adapters.
 Use telemetry to verify savings in a real agent.
 
 Quote recorded numbers only when the method and source match.
+
+## v0.2 validation
+
+Run the full release checks from the repository root:
+
+```bash
+bun install --frozen-lockfile
+bun run build
+bun test
+bun run typecheck
+```
+
+`bun run build` compiles the package dist outputs used by pure Node consumers.
+
+The v0.2 tests add coverage for:
+
+- `inv15_async_without_new_options_matches_sync_output`
+- `store_io_failure_fail_open_with_store_errors`
+- `url_referenced_images_never_enter_store`
+- `dedupe_all_historical_same_hash_all_downgraded`
+- `dedupe_historical_ref_when_current_copy_exists`
+- `restore_accepts_short_hash_from_placeholder`
+- CLI `rescue --store` plus `restore` end-to-end behavior
+
+The corpus runner is asynchronous in v0.2 because corpus cases may exercise `cascadeImagesAsync`:
+
+```ts
+import { runCorpusConformance } from "@image-cascade/conformance";
+
+const result = await runCorpusConformance();
+if (!result.passed) throw new Error(result.checks.join("\n"));
+```
+
+The v0.2 corpus additions are:
+
+- `v02_store_restorable_placeholder.json` — store-enabled cold placeholder shape.
+- `v02_dedupe_same_hash_latest_retained.json` — same-payload same-hash dedupe with the latest original retained.
+- `anthropic_document_positional_historical.json` — Anthropic base64 document/PDF historical downgrade.
+
+## Verifying restore from dist
+
+After `bun run build`, verify the pure Node CLI path with synthetic data:
+
+```bash
+node packages/cli/dist/main.js rescue session.jsonl --all --yes --store ./store --json
+node packages/cli/dist/main.js restore <hash-or-hash12> --store ./store --out restored.png --json
+```
+
+The restored file should byte-match the original synthetic image bytes used in the session fixture.

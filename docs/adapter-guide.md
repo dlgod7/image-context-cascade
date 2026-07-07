@@ -373,3 +373,59 @@ A good adapter is thin.
 It connects host hooks to the core, preserves current images, downgrades historical images, logs safe telemetry, and lets conformance tests catch drift.
 
 If the adapter starts copying matcher, placeholder, classification, or traversal code, stop and move that behavior back behind the core API.
+
+## v0.2 source store and tiered downgrade
+
+Use `cascadeImagesAsync` when you want the v0.2 memory model: opt-in source storage, warm thumbnails, cold restorable placeholders, and same-payload dedupe.
+
+```ts
+import {
+  cascadeImagesAsync,
+  defaultTierPolicy,
+  fsSourceStore,
+  type Thumbnailer,
+} from "image-context-cascade";
+
+const store = fsSourceStore("/var/lib/my-agent/image-cascade", {
+  maxBytes: 500 * 1024 * 1024,
+});
+
+const thumbnailer: Thumbnailer = async (image) => {
+  // Host-provided implementation. Return null to fall back to a text placeholder.
+  return { data: image.data, mediaType: image.mediaType };
+};
+
+const result = await cascadeImagesAsync(providerPayload, {
+  store,
+  thumbnailer,
+  tiers: defaultTierPolicy({ thumbnailMaxAge: 2 }),
+});
+```
+
+The source store is off by default. Enabling it is a privacy decision by the host or user because it writes original image bytes to local disk.
+
+The `thumbnailer` is injected for the same reason the web entry requires an injected hasher: the core has zero image-processing dependencies. A small Sharp-based reference implementation is available at `examples/thumbnailer-sharp.mjs`; it is intentionally not a package dependency.
+
+## Restore as current-turn content
+
+Restore is not a history rewrite.
+
+Correct flow:
+
+1. The model sees a placeholder such as `[Image a1b2c3d4e5f6 omitted; restorable via image-cascade restore a1b2c3d4e5f6.]`.
+2. The host or agent runs `image-cascade restore a1b2c3d4e5f6 --out restored.png` or calls `restoreImage(store, hash)`.
+3. The restored file or block is added to the next request as current-turn content.
+
+If you are building an in-process adapter, use `buildImageBlock(formatId, storedImage)` to construct provider-native current-turn blocks:
+
+```ts
+import { buildImageBlock, restoreImage } from "image-context-cascade";
+
+const stored = await restoreImage(store, requestedHash);
+if (stored) {
+  const block = buildImageBlock("anthropic", stored);
+  nextUserMessage.content.push(block);
+}
+```
+
+Do not backfill the old message where the image used to be. Backfilling changes historical bytes, invalidates prompt-cache prefixes, and makes it harder to reason about what the model saw at each turn.

@@ -47,11 +47,27 @@ The pattern manages image blocks inside provider request payloads.
 
 It does not summarize arbitrary text.
 
-It does not claim to recover downgraded pixels.
+It can recover downgraded pixels only when the caller explicitly enabled a local source store before downgrade.
 
 It does not require one framework or one provider SDK.
 
 It does require a hook at request construction time, or an equivalent request proxy that can transform the payload before it is sent.
+
+## Three-tier memory model
+
+The v0.2 model separates classification from tiering.
+
+Classification answers whether an image is safe to transform: `current`, `historical`, or `unknown`.
+
+Tiering answers how a historical image should be represented:
+
+- **hot**: current-turn original bytes remain in the provider payload.
+- **warm**: a host-injected deterministic thumbnail may replace a recent historical image, keeping a visual impression at lower cost.
+- **cold**: older historical images become text placeholders; when a source store is enabled, the placeholder hash can restore the original bytes later.
+
+The source store is opt-in. Without it, the default placeholder and synchronous behavior remain byte-compatible with v0.1.
+
+Restore is append-only: a restored image is reintroduced as new current-turn content. A compliant host must not rewrite old transcript bytes to backfill the original, because that destroys prompt-cache prefixes and changes historical context.
 
 ## Classification model
 
@@ -262,6 +278,44 @@ It must not summarize or rewrite normal text messages as part of image downgrade
 
 Hosts may add separate summarization behavior, but that behavior is outside this pattern.
 
+### INV-13: Restore is append-only
+
+Restore and source-store paths must not rewrite historical message bytes.
+
+A restored image should enter the conversation as new current-turn content, for example through a tool result or a newly attached file.
+
+This preserves prompt-cache prefixes and makes restore auditable.
+
+### INV-14: Thumbnails are deterministic
+
+For the same original image and the same thumbnailer configuration, thumbnail output must be byte-identical.
+
+Hosts may use any image library outside core, but must fix resize, format, quality, metadata, and ordering choices so warm-tier payloads remain stable.
+
+### INV-15: No-store default behavior is byte-compatible
+
+If callers do not pass `store`, `tiers`, or `thumbnailer`, output must remain byte-compatible with the v0.1 default path.
+
+New restore/tier capabilities are opt-in.
+
+### INV-16: Store IO failures fail open
+
+Any source-store IO failure must not abort cascade.
+
+The operation should continue with the safest available downgrade behavior, and `telemetry.storeErrors` must count the failure.
+
+### INV-17: Telemetry and store indexes contain no image bytes
+
+Telemetry and any store index metadata must not contain raw base64, data URIs, or decoded image bytes.
+
+The source-store data file itself contains the original image by design; that file exists only because the user explicitly enabled the store.
+
+### INV-18: Dedupe references only point forward within the same payload
+
+A dedupe placeholder may refer only to a later same-hash original image in the same payload.
+
+It must not point to an earlier image, and it must not create cross-payload references.
+
 ## Conformance expectations
 
 A conforming implementation should demonstrate the invariants with executable tests, not only with documentation.
@@ -281,6 +335,14 @@ Important named tests and corpus cases include:
 - `duplicate_block_reference_consistent`, covering INV-9.
 - `replace_produces_format_correct_text_block`, covering INV-11.
 - `payload_without_images_untouched`, covering INV-12.
+- `restore_build_image_block_three_formats`, covering INV-13.
+- `fake_thumbnailer_contract_and_determinism`, covering INV-14.
+- `inv15_async_without_new_options_matches_sync_output`, covering INV-15.
+- `store_io_failure_fail_open_with_store_errors`, covering INV-16.
+- `telemetry_never_contains_base64` plus store tests, covering INV-17.
+- `dedupe_same_hash_keeps_latest_within_payload_only`, `dedupe_all_historical_same_hash_all_downgraded`, and `dedupe_historical_ref_when_current_copy_exists`, covering INV-18.
+- `url_referenced_images_never_enter_store`, covering the v0.2 limitation that remote URL references are not persisted.
+- `restore_accepts_short_hash_from_placeholder`, covering the CLI restore workflow from a short placeholder hash.
 - `anthropic_positional_historical.json`, `openai_chat_positional_historical.json`, and `openai_responses_positional_historical.json`, covering provider-format downgrade.
 - `tracker_current_hash_retained.json`, covering explicit current-image retention in tracker mode.
 - `nested_boundary_regression.json`, covering positional boundary safety in nested transcript-like data.
@@ -303,9 +365,9 @@ This pattern does not decide what the assistant should remember about an image.
 
 A host may add a separate instruction asking the model to summarize visual facts after using an image, but that is not required for byte removal.
 
-This pattern does not provide source storage or automatic re-inspection in version 0.1.
+Source storage is opt-in and local. Automatic re-inspection still depends on host capabilities: a host with shell and file tools can run `image-cascade restore <hash>` and inspect the restored file without any extra server.
 
-It also does not make closed agents extensible if they expose no request hook and cannot be used behind a request proxy.
+The pattern also does not make closed agents extensible if they expose no request hook and cannot be used behind a request proxy or session-file rescue flow.
 
 ## Summary
 

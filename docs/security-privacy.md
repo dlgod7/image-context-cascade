@@ -8,7 +8,7 @@ It does not add a new image-processing service.
 
 It does not upload images.
 
-It does not store image bytes.
+It does not store image bytes unless the caller explicitly enables the v0.2 source store.
 
 It walks a payload that already exists inside the agent process, replaces historical image blocks with short text placeholders, and returns telemetry that cannot carry image data by type.
 
@@ -93,9 +93,11 @@ It does not open sockets.
 
 It does not call external APIs.
 
-It does not write image data to disk.
+It does not write image data to disk on the default path.
 
-It does not create a side channel for image bytes.
+If a caller explicitly enables the source store, it writes original bytes to the configured local directory so the user can restore them later.
+
+It does not create a network side channel for image bytes.
 
 For historical images, it removes bytes from the provider payload.
 
@@ -317,3 +319,25 @@ It fails open when unsure.
 It exposes telemetry that has no image-data field.
 
 Privacy still depends on the host not logging or copying the original payload elsewhere.
+
+## Source store privacy boundary
+
+The v0.2 source store is opt-in and local.
+
+Default cascade behavior does not create a store and does not write image bytes to disk. The store is enabled only when a caller passes `store` to `cascadeImagesAsync` or runs the CLI with `--store`.
+
+When enabled, the reference `fsSourceStore(dir, { maxBytes })` writes content-addressed JSON files under:
+
+```text
+<dir>/<hash-prefix-2>/<full-hash>.json
+```
+
+Each data file contains the stored base64 bytes, media type, and small metadata such as source, approximate size, and format ID. That file is intentionally sensitive: it contains the original image because the user chose restore capability.
+
+The store remains inside the local filesystem. The library does not upload store contents, does not contact a restore service, and does not add a background process.
+
+If `maxBytes` is configured, the reference store performs LRU cleanup using file mtimes. Cleanup is best-effort. IO failures fail open: cascade continues, and `telemetry.storeErrors` records the failure.
+
+Telemetry remains structurally unable to carry image bytes. Store telemetry fields are counts only: `stored`, `thumbnailed`, `dedupedRefs`, and `storeErrors`.
+
+Remote URL references are not fetched into the source store. A URL can be hashed as an identity when it appears in a provider block, but the store only persists image bytes already present as base64/data URI payload data.
