@@ -19,11 +19,34 @@ async function runRescue(file: string, args: string[] = []) {
   return { stdout, stderr, code, json: stdout.trim() ? JSON.parse(stdout) : undefined };
 }
 
+async function runCli(args: string[]) {
+  const proc = Bun.spawn(["bun", cli, ...args], { stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+  return { stdout, stderr, code };
+}
+
 function line(obj: unknown) {
   return JSON.stringify(obj);
 }
 
 describe("rescue CLI", () => {
+  test("version_flag_prints_package_version", async () => {
+    const pkg = JSON.parse(await readFile(join(import.meta.dir, "..", "package.json"), "utf8"));
+    for (const flag of ["--version", "-v"]) {
+      const result = await runCli([flag]);
+      expect(result.code).toBe(0);
+      expect(result.stdout.trim()).toBe(pkg.version);
+    }
+  });
+
+  test("unknown_option_fails_with_usage_not_stack_trace", async () => {
+    const result = await runCli(["rescue", "whatever.jsonl", "--bogus"]);
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain("--bogus");
+    expect(result.stderr).toContain("image-cascade rescue <file>");
+    expect(result.stderr).not.toContain("throw");
+  });
+
   test("rescue_jsonl_two_pass_boundary_correct", async () => {
     const dir = await tempDir();
     const file = join(dir, "session.jsonl");

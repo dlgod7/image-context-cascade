@@ -9,7 +9,12 @@ import { cascadeImages } from "image-context-cascade";
 const historicalStrategy = Object.assign(() => "historical", { cascadeStrategyName: "custom" });
 
 function usage() {
-  return `image-cascade rescue <file> [--yes] [--all] [--json]\n\nRescue oversized image session files by downgrading historical image blocks.\n\nCommands:\n  rescue <file>   Analyze or rewrite a .jsonl session or a single JSON document.\n\nOptions:\n  --yes           Write changes. Default is dry-run and writes nothing.\n  --all           Downgrade all image blocks, including when no user-message boundary is found.\n  --json          Print machine-readable JSON statistics.\n  --help, -h      Show this help.\n\nNotes:\n  JSONL mode uses two streaming passes and O(1) memory. Single JSON mode reads the whole file into memory.\n`;
+  return `image-cascade rescue <file> [--yes] [--all] [--json]\n\nRescue oversized image session files by downgrading historical image blocks.\n\nCommands:\n  rescue <file>   Analyze or rewrite a .jsonl session or a single JSON document.\n\nOptions:\n  --yes           Write changes. Default is dry-run and writes nothing.\n  --all           Downgrade all image blocks, including when no user-message boundary is found.\n  --json          Print machine-readable JSON statistics.\n  --version, -v   Print the CLI version.\n  --help, -h      Show this help.\n\nNotes:\n  JSONL mode uses two streaming passes and O(1) memory. Single JSON mode reads the whole file into memory.\n`;
+}
+
+async function cliVersion() {
+  const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  return pkg.version;
 }
 
 function hasUserRole(value) {
@@ -191,16 +196,28 @@ function printStats(stats, json) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const parsed = parseArgs({
-    args: argv,
-    allowPositionals: true,
-    options: {
-      yes: { type: "boolean", default: false },
-      all: { type: "boolean", default: false },
-      json: { type: "boolean", default: false },
-      help: { type: "boolean", short: "h", default: false },
-    },
-  });
+  let parsed;
+  try {
+    parsed = parseArgs({
+      args: argv,
+      allowPositionals: true,
+      options: {
+        yes: { type: "boolean", default: false },
+        all: { type: "boolean", default: false },
+        json: { type: "boolean", default: false },
+        version: { type: "boolean", short: "v", default: false },
+        help: { type: "boolean", short: "h", default: false },
+      },
+    });
+  } catch (err) {
+    console.error(`error: ${err.message}\n`);
+    console.error(usage());
+    return 1;
+  }
+  if (parsed.values.version) {
+    console.log(await cliVersion());
+    return 0;
+  }
   const [cmd, file] = parsed.positionals;
   if (parsed.values.help || !cmd) {
     console.log(usage());
