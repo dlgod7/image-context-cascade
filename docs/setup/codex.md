@@ -46,6 +46,17 @@ is stored locally — run that restore command if the image is needed again.
 - **Never rescue the currently open session** — the Codex process may still be appending to it. Closed sessions are fair game any time, including while Codex runs elsewhere.
 - Every archived image is restorable: `image-cascade restore <hash> --out img.png`.
 
+## Resuming a rescued rollout — what to expect
+
+Field-tested on a real 17.4 MB rollout (2026-05, image-heavy):
+
+- **Before rescue**: `codex exec resume` could not even reach the API — the 17.4 MB body died with `413 Payload Too Large` after 5 retries. The session was already dead.
+- **After rescue** (2.5 MB): the request went through and the turn started. In this particular test the resume was then refused by Codex's own image validation — with *zero* image fields left in the file, the trigger sits inside encrypted reasoning blobs that no external tool can (or should) touch.
+
+So: rescue reliably makes the file lean, valid, analyzable, and every image restorable — and can bring a 413-dead session back within request-size limits. Whether Codex ultimately accepts an old session on resume also depends on Codex-side checks that are outside image scope. Treat resume of *old* rescued rollouts as best-effort; the `.icc-backup` next to the file always brings the original back byte-for-byte.
+
+If a rescued rollout is refused on resume with an image error, try `rescue <file> --all` (downgrades current-turn images too — fine for archived sessions you only want readable/resumable, not for sessions where the last turn's images still matter).
+
 ## Kill switch & uninstall
 
 - `ICC_DISABLE=1` disables hook-triggered processing (Codex has none today, so this is future-proofing); manual commands always work.

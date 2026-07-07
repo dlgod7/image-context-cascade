@@ -104,7 +104,7 @@ image-cascade restore a1b2c3d4e5f6 --out img.png   # 把任何归档的图找回
 image-cascade hook claude-code                     # SessionEnd hook 入口（stdin 读 payload）
 ```
 
-两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 把 source store 写到本地 `~/.image-cascade/store`（用 `ICC_STORE_DIR` 可改位置）。
+两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行原样透传、幂等。`--store` 把 source store 写到本地 `~/.image-cascade/store`（用 `ICC_STORE_DIR` 可改位置）。占位符里的 hash 标识的是 store 对象——它是原始 base64 文本的哈希，不是还原出来的文件的字节哈希。
 
 session 文件的位置：
 
@@ -214,6 +214,7 @@ Adapter 是宿主钩子与 core 之间的胶水——[Pi 参考 adapter](package
 - 仅支持精确字节身份：同一张图片重新编码或缩放后 hash 不同；感知哈希属于未来研究方向。
 - Warm 缩略图需要宿主注入确定性的 `thumbnailer`。Core 和 CLI 都不依赖 Sharp 或其他图像处理库。
 - 没有请求构造钩子的封闭 agent 无法在进程内运行本中间件。Claude Code 拿到的是次优解——通过 `SessionEnd` hook 在会话边界自动归档；Codex 今天只能手动/由 agent 提议（它新出的 hooks 体系还没有会话结束事件，而会话中途改写 transcript 比在边界处理风险更高）。
+- Rescue 保证的是改写后的文件精简、每行合法 JSON、图片全部可找回——不保证宿主一定能 *resume* 老 session。实测：一个 17.4 MB 的 Codex rollout 原本 resume 直接 413（死档），rescue 后（2.5 MB）请求能发出去了，但 Codex 随后以一个与我们改写无关的校验拒绝了它（文件里已经零图片字段，触发源在加密 reasoning 里）。老 session 的 resume 属于 best-effort；`.icc-backup` 永远能把原始字节一比一还原。
 
 ## 路线图
 

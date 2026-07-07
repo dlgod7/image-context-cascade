@@ -29,6 +29,13 @@ npm install image-context-cascade
 
 If your Pi config keeps dependencies elsewhere (some setups use a dedicated npm prefix directory), install into whatever location your existing extensions already resolve imports from — check where other extensions' dependencies live.
 
+Verify resolution before restarting (run from the directory you installed into):
+
+```bash
+bun -e "import('image-context-cascade').then(m => console.log(typeof m.cascadeImagesAsync))"
+# must print: function
+```
+
 ## Step 3 — restart Pi and verify
 
 Restart Pi so it loads the new extension. Then verify with a real image:

@@ -104,7 +104,7 @@ image-cascade restore a1b2c3d4e5f6 --out img.png   # bring any archived image ba
 image-cascade hook claude-code                     # SessionEnd hook entry point (stdin payload)
 ```
 
-Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` writes a local content-addressed store under `~/.image-cascade/store` (override with `ICC_STORE_DIR`).
+Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through untouched, idempotent. `--store` writes a local content-addressed store under `~/.image-cascade/store` (override with `ICC_STORE_DIR`). The placeholder hash identifies the stored object — it is the hash of the original base64 text, not the byte hash of the restored file.
 
 Where session files live:
 
@@ -215,6 +215,7 @@ New provider format? Implement a `BlockMatcher` (`match(block)` / `replace(block
 - Exact-byte identity only: the same image re-encoded or resized hashes differently. Perceptual hashing is future research.
 - Warm thumbnails require a host-injected deterministic `thumbnailer`. Core and CLI do not depend on Sharp or any other image-processing library.
 - Closed agents without request-construction hooks cannot run the middleware in-process. Claude Code gets the next-best thing — automatic archiving at session boundaries via its `SessionEnd` hook; Codex is manual/agent-suggested today (its new hooks system has no session-end event yet, and transcript rewrite mid-session is riskier than at boundaries).
+- Rescue guarantees the rewritten file is lean, valid JSONL, and fully restorable — it does not guarantee the host will *resume* an old session. Field test: a 17.4 MB Codex rollout that 413'd on resume (dead) became sendable after rescue (2.5 MB), but Codex then refused it on a validation unrelated to our rewrite (zero image fields left in the file; the trigger sits in encrypted reasoning). Old-session resume is best-effort; the `.icc-backup` always restores the original bytes.
 
 ## Roadmap
 
