@@ -222,6 +222,7 @@ Adapter 是宿主钩子与 core 之间的胶水——[Pi 参考 adapter](package
 - **v0.2**—— opt-in source store、hot/warm/cold 三层降级模型、注入式 thumbnailer 接口、可找回占位符、`image-cascade restore`、同 payload 精确字节去重，以及 Claude Code 通过 shell + 文件工具完成的零组件找回闭环。
 - **v0.2.1**—— Codex rollout session 端到端实测通过；新增 `image_generation_call` / `image_generation_end` 裸 base64 result 的 matcher；遍历引擎现在也匹配消息列表的 item 级块和对象字段块，不再只认 content 数组成员。
 - **v0.2.2（本版本）**—— Claude Code 免操心集成（`image-cascade hook claude-code` + SessionEnd hook）、`ICC_DISABLE` 总开关、`ICC_STORE_DIR`、并发写入守卫、解码字节级 magic 嗅探（新增 BMP/TIFF/AVIF/HEIC，修复 RIFF 误判）、restore 文件名按 media type 推导。
+- **v0.2.3**——修复：`npm install -g` 后 CLI 入口在 macOS/Linux 上静默失效（符号链接导致 `import.meta.url` 自检失败）；同时修复 Windows 路径不匹配问题（改用 `pathToFileURL` 确保跨平台正确性）。感谢 [@dafang](https://github.com/dafang) 报告问题并提供初步修复（[#1](https://github.com/dlgod7/image-context-cascade/issues/1)、[#2](https://github.com/dlgod7/image-context-cascade/pull/2)）。
 - **v0.3 计划**—— 预算驱动降级、更多生命周期 hook 宿主（Cursor 已有 `sessionEnd`；Codex hooks 刚上线但还缺这个事件）、面向没有 shell 工具的宿主的 optional MCP server，以及本地 proxy 模式——让任意 agent 都能拿到请求时降级。
 - **未来研究** —— 近似图片的感知哈希；带安全隐私默认值的跨会话持久 tracker。
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createReadStream, createWriteStream, realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { access, copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -346,8 +347,9 @@ function isInvokedAsMain() {
   // `npm install -g` creates the bin as a symlink (e.g. bin/image-cascade ->
   // dist/main.js). import.meta.url resolves through that symlink to the real
   // file, while argv[1] keeps the invocation path, so resolve argv[1] first.
+  // Use pathToFileURL for cross-platform correctness (Windows needs file:///D:/).
   try {
-    return import.meta.url === `file://${realpathSync(invoked).replace(/\\/g, "/")}`;
+    return import.meta.url === pathToFileURL(realpathSync(invoked)).href;
   } catch {
     return invoked.endsWith("main.js");
   }
