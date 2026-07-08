@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { createReadStream, createWriteStream } from "node:fs";
+import { createReadStream, createWriteStream, realpathSync } from "node:fs";
 import { access, copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -340,6 +340,19 @@ export async function main(argv = process.argv.slice(2)) {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]?.replace(/\\/g, "/")}` || process.argv[1]?.endsWith("main.js")) {
+function isInvokedAsMain() {
+  const invoked = process.argv[1];
+  if (!invoked) return false;
+  // `npm install -g` creates the bin as a symlink (e.g. bin/image-cascade ->
+  // dist/main.js). import.meta.url resolves through that symlink to the real
+  // file, while argv[1] keeps the invocation path, so resolve argv[1] first.
+  try {
+    return import.meta.url === `file://${realpathSync(invoked).replace(/\\/g, "/")}`;
+  } catch {
+    return invoked.endsWith("main.js");
+  }
+}
+
+if (isInvokedAsMain()) {
   process.exitCode = await main();
 }
