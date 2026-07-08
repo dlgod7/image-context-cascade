@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -349,5 +349,19 @@ describe("hook claude-code", () => {
     expect(second.json.downgraded).toBe(0);
     expect((await stat(file)).size).toBe(bytes);
     expect(existsSync(`${file}.icc-backup.1`)).toBe(false);
+  });
+
+  test("runs_when_invoked_through_npm_style_bin_symlink", async () => {
+    // `npm install -g` creates the `image-cascade` bin as a symlink to this
+    // file. import.meta.url resolves through the symlink to the real path
+    // while process.argv[1] keeps the invocation path, so the entrypoint
+    // self-check must resolve argv[1] before comparing.
+    const dir = await tempDir();
+    const binPath = join(dir, "image-cascade");
+    await symlink(cli, binPath);
+    const proc = Bun.spawn(["bun", binPath, "--help"], { stdout: "pipe", stderr: "pipe" });
+    const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("image-cascade rescue <file>");
   });
 });
