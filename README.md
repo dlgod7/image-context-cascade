@@ -4,7 +4,7 @@ English | [简体中文](README.zh-CN.md)
 
 **Your agent resends every screenshot you've ever pasted — every single turn.** The model saw it on turn one; fifty turns later you're still paying for those pixels. Tokens burn, prompt caches destabilize, and eventually a 413 bricks the whole session.
 
-`image-context-cascade` downgrades historical images to restorable lightweight placeholders *before* the request leaves your process — current-turn images stay intact. **One command takes a 50 MB session down to 2 MB, and every removed image is recoverable.**
+`image-context-cascade` downgrades historical images to restorable lightweight placeholders *before* the request leaves your process — current-turn images stay intact. Downgrading history does shift the cache prefix, but placeholders are stable text that won't drift after rebuild — measured cache hit rates are unaffected in practice. **One command takes a 50 MB session down to 2 MB, and every removed image is recoverable.**
 
 Zero runtime dependencies · Framework-agnostic · Supports Anthropic / OpenAI Chat / OpenAI Responses payload shapes
 
@@ -15,6 +15,8 @@ Zero runtime dependencies · Framework-agnostic · Supports Anthropic / OpenAI C
 When you paste screenshots into Codex, Claude Code, or similar agents, every image lives in the session as base64 — **and gets resent in full on every subsequent request**. In one real session, screenshots ate 86.3% of the context window. On Codex, a single request body hit 8.34 MB with ~5.7M prompt tokens. Sessions balloon, `/compact` can't keep up, and oversized payloads 413 the session dead.
 
 Compaction can't save you — and not for lack of trying. A 413 happens the moment the request leaves your process, before any compaction runs. Images can break compaction itself. The only layer where this is fully fixable is request construction. That's where this project lives.
+
+The Claude Code and Codex communities are well aware of this problem — official issues are full of discussion and similar solution sketches. But the fix touches request construction, cache strategy, and session recovery — too many moving parts for a quick official fix. This project turns those community sketches into a working implementation, holding the line until native support arrives.
 
 ## Key features
 
@@ -28,9 +30,9 @@ Compaction can't save you — and not for lack of trying. A 413 happens the mome
 
 **Design guarantees (every mode, every host):**
 
+- **Cache impact is contained** — downgrading history inevitably shifts the cache prefix, but placeholders are stable text that won't drift after rebuild; measured hit rates are unaffected in practice
 - **Archive, not delete** — every downgraded image is restorable by hash. Nothing is ever unrecoverable.
 - **Text history untouched** — only images are managed. Your conversation stays verbatim.
-- **Cache-friendly** — placeholders are stable; they don't destabilize prompt-cache prefixes.
 - **Nothing resident** — no daemon, no watcher. Hooks run for milliseconds at session boundaries and no-op when there's nothing to archive.
 - **No content judgement** — classification is positional and deterministic. No model decides which image "looks important."
 - **Private by design** — image data never leaves the process boundary it was already in. Telemetry contains counts and hashes only, never image data.
