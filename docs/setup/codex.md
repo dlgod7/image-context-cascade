@@ -1,10 +1,12 @@
 # Set up image-context-cascade in Codex
 
-Codex has no session-end hook today (its hooks system is new and doesn't ship one yet), and rewriting a session mid-flight is riskier than at boundaries. So the honest integration level is **agent-suggested, user-approved**: a marked block in `~/.codex/AGENTS.md` teaches Codex when to offer the rescue command, and you approve each run.
+Codex ships a real `SessionEnd` hook, so this can be **automatic**: a hook entry in `~/.codex/hooks.json` runs `image-cascade hook codex` when a session ends, and that session's historical images get archived without you doing anything. A marked block in `~/.codex/AGENTS.md` is still installed as a fallback and to explain the placeholders.
 
-**What you get:** Codex knows the tool exists, proposes it when sessions get heavy, understands the placeholders it produces, and can restore any archived image on request. Image-heavy Codex rollouts shrink dramatically — a real 332-line rollout went **50.2 MB → 2.26 MB (−95.5%)**, because Codex stores each generated image *twice* as bare base64.
+Details that shape the setup: Codex gives a `SessionEnd` hook a **hard 3-second budget** and then kills its process group, and the rollout file may still be flushing when the hook fires. So `hook codex` reads the payload, hands the work to a detached worker, and exits; the worker waits for the file to settle, then rescues it. The process Codex kills never touches the transcript — the hook only reads stdin and hands off — so a timeout can't interrupt a rewrite; every failure path exits 0 and only logs a line.
 
-**Hard rule for this task:** do not read, list, or rewrite any session/transcript files. You are only installing a CLI and appending a marked block to an instruction file.
+**What you get:** image-heavy Codex rollouts shrink automatically at session end — a real 332-line rollout went **50.2 MB → 2.26 MB (−95.5%)**, because Codex stores each generated image *twice* as bare base64. Every archived image stays restorable, and Codex understands the placeholders it produces.
+
+**Hard rule for this task:** do not read, list, or rewrite any session/transcript files. You are only installing a CLI and editing config/instruction files. A SessionEnd hook fires for the session that is ending — never write anything that touches a session that is still open.
 
 ## Step 1 — install the CLI
 
@@ -14,7 +16,36 @@ npm install -g @image-cascade/cli
 
 Verify: `image-cascade --version` prints a version. If global installs are not allowed, use `npx @image-cascade/cli` in place of `image-cascade` below.
 
-## Step 2 — add the marked block to `~/.codex/AGENTS.md`
+## Step 2 — register the SessionEnd hook in `~/.codex/hooks.json`
+
+Merge this into `~/.codex/hooks.json` (create the file if missing; keep any existing hooks). The command needs no arguments — Codex passes the hook payload as JSON on stdin, including `transcript_path`:
+
+```json
+{
+  "hooks": {
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "image-cascade hook codex", "timeout": 3 } ] }
+    ]
+  }
+}
+```
+
+`timeout` is documented as seconds. Codex caps `SessionEnd` at 3 seconds regardless, which is why the CLI's real work happens in a detached worker — the hook only has to read stdin and hand off.
+
+Verify the file parses: `node -e "JSON.parse(require('fs').readFileSync(process.env.HOME + '/.codex/hooks.json','utf8')); console.log('ok')"`.
+
+## Step 3 — trust the hook (required, or it will not run)
+
+Codex refuses to run **untrusted** user hooks. Trust state lives in `~/.codex/config.toml` under `[hooks.state]`, keyed by file, event, and handler position:
+
+```toml
+[hooks.state]
+"/home/you/.codex/hooks.json:session_end:0:0" = { trusted_hash = "..." }
+```
+
+The easiest way to create it: open the Codex TUI and run `/hooks`, then approve the pending `SessionEnd` hook. (Non-interactively, `codex --dangerously-bypass-hook-trust` skips the gate.) If you edit this hook later, the hash no longer matches and Codex asks again — a useful safety property, not a bug.
+
+## Step 4 — add the marked block to `~/.codex/AGENTS.md` (fallback)
 
 Append this block to `~/.codex/AGENTS.md` (create the file if missing). **Append — never overwrite existing content. Keep the markers exactly, so the block can be removed cleanly later.**
 
@@ -28,22 +59,25 @@ is stored locally — run that restore command if the image is needed again.
 <!-- image-context-cascade:end -->
 ```
 
-## Step 3 — verify
+## Step 5 — verify
 
 1. `image-cascade --version` prints a version.
-2. The block is present in `~/.codex/AGENTS.md` with both markers, and everything that was in the file before is untouched.
+2. `~/.codex/hooks.json` parses and contains the `SessionEnd` entry; the hook shows as trusted (Step 3).
+3. The block is present in `~/.codex/AGENTS.md` with both markers, and everything that was in the file before is untouched.
+4. Optional: run `image-cascade hook codex --sync` and pipe a JSON payload with a `transcript_path` to a **closed** rollout file you no longer need; a summary prints, or a `skipping` line if the file is missing. Add `--json` for machine-readable stats.
 
 ## What runs day-to-day
 
+- A session ends → Codex runs the hook → a detached worker waits for the rollout to settle, archives its historical images, and logs to `~/.image-cascade/hook-codex.log`. Nothing is resident and nothing touches the session that is still open.
 - Codex session files live under `~/.codex/sessions/<year>/<month>/<day>/rollout-*.jsonl`.
-- When a session feels heavy or slow, Codex (having read AGENTS.md) offers the rescue flow:
+- Closed sessions are fair game any time. To handle one manually (or if the hook is disabled):
 
   ```bash
   image-cascade rescue <rollout-file>                # dry-run: shows what would be saved
   image-cascade rescue <rollout-file> --yes --store  # backup, rewrite, archive originals
   ```
 
-- **Never rescue the currently open session** — the Codex process may still be appending to it. Closed sessions are fair game any time, including while Codex runs elsewhere.
+- **Never rescue the currently open session by hand** — the Codex process may still be appending to it. The hook is safe because it fires at the session *end*, and the worker additionally waits for the file to stop changing.
 - Every archived image is restorable: `image-cascade restore <hash> --out img.png`.
 
 ## Resuming a rescued rollout — what to expect
@@ -59,5 +93,5 @@ If a rescued rollout is refused on resume with an image error, try `rescue <file
 
 ## Kill switch & uninstall
 
-- `ICC_DISABLE=1` disables hook-triggered processing (Codex has none today, so this is future-proofing); manual commands always work.
-- Uninstall: delete the marked block (everything between and including the two markers), then optionally `npm uninstall -g @image-cascade/cli`.
+- `ICC_DISABLE=1` disables hook-triggered processing (the hook exits 0 and logs a skip); manual commands always work. It must be set in the environment Codex itself runs in.
+- Uninstall: remove the `SessionEnd` entry from `~/.codex/hooks.json` (and its `[hooks.state]` entry in `~/.codex/config.toml`), delete the marked block (everything between and including the two markers), then optionally `npm uninstall -g @image-cascade/cli`.

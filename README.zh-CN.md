@@ -44,7 +44,7 @@ Claude Code 和 Codex 社区都已意识到这个问题，官方 issue 里有大
 本项目有用，但不是万能的，以下是你需要知道的：
 
 - **只管图片，不碰文本。** 它不是通用上下文压缩。
-- **适配程度因 agent 而异。** 最兼容的是 Pi 等开源、可自由改请求构造的 agent（全自动）；Claude Code 用 SessionEnd hook 做会话边界自动归档；Codex 目前只能半自动（agent 提议、你批准）；其他没有钩子的 agent 只能手动跑 CLI。
+- **适配程度因 agent 而异。** 最兼容的是 Pi 等开源、可自由改请求构造的 agent（全自动）；Claude Code 和 Codex 都用各自的 SessionEnd hook 做会话边界自动归档；其他没有钩子的 agent 只能手动跑 CLI。
 - **中间件性质决定有安装失败可能。** 不同机器、不同 agent 配置甚至改装都可能导致问题——虽然不大，但不排除特例。好在 AI 大多可以修理甚至本土化。
 - **远程 URL 图片不进 store。** 只处理 payload 里已有的 base64/data URI，不主动抓取 URL。
 - **仅精确字节身份匹配。** 同一张图重新编码或缩放后 hash 不同，感知哈希属于未来研究。
@@ -82,7 +82,7 @@ image-cascade restore a1b2c3d4e5f6 --out img.png   # 随时找回任意一张被
 | **Pi** | 自带 adapter → `before_provider_request` | **全自动，每次请求实时生效**，历史图归档可找回——参考级集成 |
 | 自维护 agent / 框架 | 请求构造处调 `cascadeImages()` | 全自动，每次请求实时生效 |
 | Claude Code | `SessionEnd` hook → `image-cascade hook claude-code` | 每次会话结束自动归档；resume 加载瘦身后的 transcript |
-| Codex | `AGENTS.md` 软指令 + 手动 `rescue` | 半自动——agent 提议，你批准 |
+| Codex | `SessionEnd` hook → `image-cascade hook codex` | 会话结束自动归档（Codex 只给 hook 3 秒，所以交给 detached worker）；`AGENTS.md` 软指令保留作兜底 |
 | 其他任意 agent | `npx @image-cascade/cli rescue` | 手动，任何 JSON/JSONL transcript 都能用 |
 
 **实测案例：**
@@ -186,6 +186,7 @@ image-cascade rescue <file> --yes              # 备份 + 重写
 image-cascade rescue <file> --yes --store      # 同时归档原图
 image-cascade restore <hash> --out <file>      # 找回归档图片
 image-cascade hook claude-code                 # SessionEnd hook 入口
+image-cascade hook codex                       # Codex SessionEnd hook 入口
 ```
 
 两遍流式扫描、O(1) 内存、自动备份、原子写入、坏行透传、幂等。`--store` 写到 `~/.image-cascade/store`（`ICC_STORE_DIR` 可改位置）。`ICC_DISABLE=1` 关闭一切 hook 自动处理。
