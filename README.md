@@ -44,7 +44,7 @@ The Claude Code and Codex communities are well aware of this problem — officia
 This project is useful, but it's not magic. Here's what you should know:
 
 - **Images only, not text.** This is not general-purpose context compression.
-- **Adapter depth varies by agent.** Pi and other open agents with request-construction hooks get fully automatic per-request handling. Claude Code gets automatic archiving at session boundaries via `SessionEnd` hook. Codex is semi-automatic (agent proposes, you approve). Agents without hooks fall back to manual CLI.
+- **Adapter depth varies by agent.** Pi and other open agents with request-construction hooks get fully automatic per-request handling. Claude Code and Codex both get automatic archiving at session boundaries via their `SessionEnd` hook. Agents without hooks fall back to manual CLI.
 - **Middleware means possible install friction.** Different machines, agent configs, or custom modifications can cause issues — uncommon, but not impossible. The good news: most agents can self-repair or localize the setup.
 - **Remote URL images are not stored.** Only base64/data-URI bytes already in the payload are processed; URLs are not fetched.
 - **Exact-byte identity only.** The same image re-encoded or resized hashes differently. Perceptual hashing is future research.
@@ -82,7 +82,7 @@ image-cascade restore a1b2c3d4e5f6 --out img.png   # bring any archived image ba
 | **Pi** | bundled adapter → `before_provider_request` | **Fully automatic, every request, in-process** — reference integration |
 | Your own agent / framework | `cascadeImages()` at request construction | Fully automatic, every request |
 | Claude Code | `SessionEnd` hook → `image-cascade hook claude-code` | Auto-archive at session end; resumes load the lean transcript |
-| Codex | `AGENTS.md` guidance + manual `rescue` | Semi-automatic — agent proposes, you approve |
+| Codex | `SessionEnd` hook → `image-cascade hook codex` | Auto-archive at session end (detached worker, since Codex gives hooks 3s); `AGENTS.md` guidance retained as fallback |
 | Anything else | `npx @image-cascade/cli rescue` | Manual, works on any JSON/JSONL transcript |
 
 **Real-world measurements:**
@@ -185,7 +185,8 @@ image-cascade rescue <file>                    # dry-run
 image-cascade rescue <file> --yes              # backup + rewrite
 image-cascade rescue <file> --yes --store      # also archive originals
 image-cascade restore <hash> --out <file>      # restore an archived image
-image-cascade hook claude-code                 # SessionEnd hook entry point
+image-cascade hook claude-code                 # Claude Code SessionEnd hook entry point
+image-cascade hook codex                       # Codex SessionEnd hook entry point
 ```
 
 Two streaming passes, O(1) memory, automatic backup, atomic write, malformed lines passed through, idempotent. `--store` writes to `~/.image-cascade/store` (override with `ICC_STORE_DIR`). `ICC_DISABLE=1` disables all hook-triggered processing.

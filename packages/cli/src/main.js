@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { createReadStream, createWriteStream, realpathSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-import { access, copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { access, appendFile, copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -10,9 +11,19 @@ import { cascadeImages, cascadeImagesAsync, fsSourceStore, restoreImage } from "
 
 const historicalStrategy = Object.assign(() => "historical", { cascadeStrategyName: "custom" });
 const defaultStoreDir = () => process.env.ICC_STORE_DIR || join(homedir(), ".image-cascade", "store");
+const defaultLogFile = () => process.env.ICC_LOG_FILE || join(homedir(), ".image-cascade", "hook-codex.log");
+
+const HOOK_HOSTS = ["claude-code", "codex"];
+// Internal argv marker: `hook codex` re-executes this same file as a detached
+// worker, which is how the rescue outlives Codex's 3-second SessionEnd budget.
+const CODEX_WORKER_ARG = "__hook-codex-worker";
+const CODEX_STDIN_TIMEOUT_MS = 1500;
+const CODEX_SETTLE_QUIET_MS = 1000;
+const CODEX_SETTLE_POLL_MS = 250;
+const CODEX_SETTLE_TIMEOUT_MS = 60000;
 
 function usage() {
-  return `image-cascade rescue <file> [--yes] [--all] [--json] [--store[=dir]]\nimage-cascade restore <hash> [--store <dir>] [--out <file>]\nimage-cascade hook claude-code [--store <dir>] [--json]\n\nRescue oversized image session files by downgrading historical image blocks.\n\nCommands:\n  rescue <file>     Analyze or rewrite a .jsonl session or a single JSON document.\n  restore <hash>    Restore a stored image/document payload to a file.\n  hook claude-code  Read a Claude Code hook payload (JSON) from stdin and archive\n                    historical images in that session transcript. Intended for a\n                    SessionEnd hook. Always uses a source store so everything is\n                    restorable; never fails the hook (runtime errors exit 0).\n\nOptions:\n  --yes           Write changes. Default is dry-run and writes nothing.\n  --all           Downgrade all image blocks, including when no user-message boundary is found.\n  --store <dir>   Enable source store. Bare --store uses ~/.image-cascade/store.\n  --out <file>    Restore output file. Default: ./restored-<hash12>.<ext>.\n  --json          Print machine-readable JSON statistics.\n  --version, -v   Print the CLI version.\n  --help, -h      Show this help.\n\nEnvironment:\n  ICC_DISABLE=1   Disable hook-triggered processing. Manual rescue/restore still run.\n  ICC_STORE_DIR   Override the default source store directory (~/.image-cascade/store).\n\nNotes:\n  JSONL mode uses two streaming passes and O(1) memory. Single JSON mode reads the whole file into memory.\n`;
+  return `image-cascade rescue <file> [--yes] [--all] [--json] [--store[=dir]]\nimage-cascade restore <hash> [--store <dir>] [--out <file>]\nimage-cascade hook <claude-code|codex> [--store <dir>] [--json]\n\nRescue oversized image session files by downgrading historical image blocks.\n\nCommands:\n  rescue <file>          Analyze or rewrite a .jsonl session or a single JSON document.\n  restore <hash>         Restore a stored image/document payload to a file.\n  hook claude-code       Read a Claude Code hook payload (JSON) from stdin and archive\n                         historical images in that session transcript. Intended for a\n                         SessionEnd hook. Always uses a source store so everything is\n                         restorable; never fails the hook (runtime errors exit 0).\n  hook codex             Same, for Codex SessionEnd hooks. Codex kills the hook at 3s,\n                         so the work continues in a detached worker (log:\n                         ~/.image-cascade/hook-codex.log). Use --sync to run inline.\n\nOptions:\n  --yes           Write changes. Default is dry-run and writes nothing.\n  --all           Downgrade all image blocks, including when no user-message boundary is found.\n  --store <dir>   Enable source store. Bare --store uses ~/.image-cascade/store.\n  --out <file>    Restore output file. Default: ./restored-<hash12>.<ext>.\n  --json          Print machine-readable JSON statistics.\n  --sync          hook codex only: do the work in this process instead of a detached worker.\n  --version, -v   Print the CLI version.\n  --help, -h      Show this help.\n\nEnvironment:\n  ICC_DISABLE=1   Disable hook-triggered processing. Manual rescue/restore still run.\n  ICC_STORE_DIR   Override the default source store directory (~/.image-cascade/store).\n  ICC_LOG_FILE    Override the hook worker log (~/.image-cascade/hook-codex.log).\n\nNotes:\n  JSONL mode uses two streaming passes and O(1) memory. Single JSON mode reads the whole file into memory.\n`;
 }
 
 async function cliVersion() {
@@ -234,6 +245,92 @@ async function hookCmd(opts) {
   }
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function appendHookLog(line) {
+  try {
+    const file = defaultLogFile();
+    await mkdir(dirname(file), { recursive: true });
+    await appendFile(file, `${new Date().toISOString()} ${line}\n`);
+  } catch {}
+}
+
+// A rollout can still be flushing right after the session ends. `rescue` refuses
+// to swap a file that changed under it, so wait until size+mtime hold still.
+async function waitForFileToSettle(file, { stableMs, intervalMs, timeoutMs }) {
+  const deadline = Date.now() + timeoutMs;
+  let lastSignature = null;
+  let stableSince = 0;
+  for (;;) {
+    let signature = null;
+    try {
+      const info = await stat(file);
+      signature = `${info.size}:${info.mtimeMs}`;
+    } catch {}
+    if (signature === null) return false;
+    if (signature !== lastSignature) { lastSignature = signature; stableSince = Date.now(); }
+    else if (Date.now() - stableSince >= stableMs) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(intervalMs);
+  }
+}
+
+// Codex runs SessionEnd hooks with a hard 3s cap, then kills the hook's process
+// group. A detached worker (its own process group, stdio ignored) outlives that,
+// waits for the rollout to settle, and rescues it. Fail-open, always.
+async function hookCodexWorker(transcript, opts) {
+  if (iccDisabled()) { await appendHookLog("ICC_DISABLE is set; skipping."); return null; }
+  if (!transcript) { await appendHookLog("worker: no transcript path; nothing to do."); return null; }
+  if (!(await fileExists(transcript))) { await appendHookLog(`worker: rollout not found, skipping: ${transcript}`); return null; }
+  if (!(await waitForFileToSettle(transcript, {
+    stableMs: CODEX_SETTLE_QUIET_MS,
+    intervalMs: CODEX_SETTLE_POLL_MS,
+    timeoutMs: CODEX_SETTLE_TIMEOUT_MS,
+  }))) {
+    await appendHookLog(`worker: rollout still changing after ${CODEX_SETTLE_TIMEOUT_MS / 1000}s; skipped (session may still be open): ${transcript}`);
+    return null;
+  }
+  const stats = await rescue(transcript, { yes: true, all: false, store: opts.store || defaultStoreDir() });
+  if (stats.changed) await appendHookLog(`archived ${stats.downgraded} historical image/document blocks in ${transcript} (${stats.bytesBefore} -> ${stats.bytesAfter} bytes; backup: ${stats.backup})`);
+  else await appendHookLog(`nothing to archive in ${transcript}.`);
+  return stats;
+}
+
+function readCodexWorkerOpts(argv) {
+  let store;
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--store") store = argv[i + 1];
+    else if (argv[i].startsWith("--store=")) store = argv[i].slice("--store=".length) || store;
+  }
+  return { store };
+}
+
+async function hookCodexCmd(opts) {
+  const say = (msg) => console.error(`image-cascade hook codex: ${msg}`);
+  try {
+    if (iccDisabled()) { say("ICC_DISABLE is set; skipping."); return null; }
+    // Codex kills the hook at 3s; keep headroom for reading stdin + the handoff.
+    const raw = await readStdinWithTimeout(CODEX_STDIN_TIMEOUT_MS);
+    if (!raw) { say("no hook payload on stdin; skipping."); return null; }
+    let input;
+    try { input = JSON.parse(raw); } catch { say("hook payload is not valid JSON; skipping."); return null; }
+    const transcript = typeof input.transcript_path === "string" ? input.transcript_path : null;
+    if (!transcript) { say("no transcript_path in hook payload; skipping."); return null; }
+    if (!(await fileExists(transcript))) { say(`rollout not found, skipping: ${transcript}`); return null; }
+    const workerOpts = { store: opts.store || defaultStoreDir() };
+    if (opts.sync) return await hookCodexWorker(transcript, workerOpts);
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), CODEX_WORKER_ARG, transcript, "--store", workerOpts.store], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+    return { detached: true, pid: child.pid ?? null, transcript };
+  } catch (err) {
+    say(`skipped: ${err?.message || err}`);
+    return null;
+  }
+}
+
 // Extension is cosmetic only — restored bytes are always exact regardless of
 // media type. Derivation is allowlisted ([a-z0-9]{1,8}) because mediaType
 // comes from payload data and ends up in a filename.
@@ -287,6 +384,17 @@ function printStats(stats, json, storeEnabled) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  // Internal re-entry used by `hook codex`: this process *is* the detached
+  // worker, so skip all CLI parsing and just do the work.
+  if (argv[0] === CODEX_WORKER_ARG) {
+    const [transcript, ...rest] = argv.slice(1);
+    try {
+      await hookCodexWorker(transcript, readCodexWorkerOpts(rest));
+    } catch (err) {
+      await appendHookLog(`worker failed: ${err?.message || err}`);
+    }
+    return 0;
+  }
   let parsed;
   try {
     parsed = parseArgs({
@@ -298,6 +406,7 @@ export async function main(argv = process.argv.slice(2)) {
         store: { type: "string" },
         out: { type: "string" },
         json: { type: "boolean", default: false },
+        sync: { type: "boolean", default: false },
         version: { type: "boolean", short: "v", default: false },
         help: { type: "boolean", short: "h", default: false },
       },
@@ -312,12 +421,12 @@ export async function main(argv = process.argv.slice(2)) {
   if (parsed.values.help || !cmd) { console.log(usage()); return 0; }
   try {
     if (cmd === "hook") {
-      if (fileOrHash !== "claude-code") {
-        console.error(`error: unknown hook host "${fileOrHash ?? ""}". Supported: claude-code\n`);
+      if (!HOOK_HOSTS.includes(fileOrHash)) {
+        console.error(`error: unknown hook host "${fileOrHash ?? ""}". Supported: ${HOOK_HOSTS.join(", ")}\n`);
         console.error(usage());
         return 1;
       }
-      const stats = await hookCmd(parsed.values);
+      const stats = fileOrHash === "codex" ? await hookCodexCmd(parsed.values) : await hookCmd(parsed.values);
       if (parsed.values.json && stats) console.log(JSON.stringify(stats, null, 2));
       return 0;
     }

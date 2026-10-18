@@ -333,6 +333,7 @@ describe("hook claude-code", () => {
     const result = await runCli(["hook", "some-other-agent"], { stdin: "{}" });
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("unknown hook host");
+    expect(result.stderr).toContain("codex");
   });
 
   test("hook_idempotent_second_run_archives_nothing", async () => {
@@ -363,5 +364,95 @@ describe("hook claude-code", () => {
     const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
     expect(code).toBe(0);
     expect(stdout).toContain("image-cascade rescue <file>");
+  });
+});
+
+describe("hook codex", () => {
+  // Codex ships a snake_case SessionEnd payload with no trailing newline and a
+  // hard 3s budget. Tests use --sync so no detached worker is left running.
+  const codexImage = (label: string) => ({ type: "input_image", image_url: `data:image/png;base64,${b64(label)}` });
+  const rolloutContent = () => [
+    line({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "earlier" }, codexImage("codex-old")] } }),
+    line({ type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "done" }] } }),
+    line({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "latest turn" }] } }),
+  ].join("\n") + "\n";
+  const payloadFor = (file: string) => JSON.stringify({
+    session_id: "0199a1b2-0000-7000-8000-000000000000",
+    transcript_path: file,
+    cwd: "/tmp",
+    hook_event_name: "SessionEnd",
+    reason: "other",
+  });
+
+  test("hook_codex_sync_rescues_rollout_from_stdin_payload", async () => {
+    const dir = await tempDir();
+    const file = join(dir, "rollout-2026-05-01T00-00-00.jsonl");
+    const store = join(dir, "store");
+    await writeFile(file, rolloutContent());
+    const result = await runCli(["hook", "codex", "--sync", "--store", store, "--json"], { stdin: payloadFor(file) });
+    expect(result.code).toBe(0);
+    expect(result.json.downgraded).toBe(1);
+    expect(result.json.stored).toBeGreaterThanOrEqual(1);
+    const rewritten = await readFile(file, "utf8");
+    expect(rewritten).toContain("restorable via image-cascade restore");
+    expect(rewritten).toContain("latest turn");
+    expect(existsSync(`${file}.icc-backup`)).toBe(true);
+  });
+
+  test("hook_codex_missing_transcript_is_silent_noop", async () => {
+    const dir = await tempDir();
+    const result = await runCli(["hook", "codex", "--sync"], { stdin: payloadFor(join(dir, "nope.jsonl")) });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("skipping");
+  });
+
+  test("hook_codex_invalid_stdin_json_is_silent_noop", async () => {
+    const result = await runCli(["hook", "codex", "--sync"], { stdin: "not json at all" });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("skipping");
+  });
+
+  test("hook_codex_empty_stdin_is_silent_noop", async () => {
+    const result = await runCli(["hook", "codex", "--sync"], { stdin: "" });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("skipping");
+  });
+
+  test("hook_codex_respects_icc_disable", async () => {
+    const dir = await tempDir();
+    const file = join(dir, "disabled.jsonl");
+    const content = rolloutContent();
+    await writeFile(file, content);
+    const result = await runCli(["hook", "codex", "--sync", "--store", join(dir, "store")], { stdin: payloadFor(file), env: { ICC_DISABLE: "1" } });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain("ICC_DISABLE");
+    expect(await readFile(file, "utf8")).toBe(content);
+    expect(existsSync(`${file}.icc-backup`)).toBe(false);
+  });
+
+  test("hook_codex_sync_is_idempotent", async () => {
+    const dir = await tempDir();
+    const file = join(dir, "idem.jsonl");
+    const store = join(dir, "store");
+    await writeFile(file, rolloutContent());
+    const first = await runCli(["hook", "codex", "--sync", "--store", store, "--json"], { stdin: payloadFor(file) });
+    expect(first.json.downgraded).toBe(1);
+    const bytes = (await stat(file)).size;
+    const second = await runCli(["hook", "codex", "--sync", "--store", store, "--json"], { stdin: payloadFor(file) });
+    expect(second.code).toBe(0);
+    expect(second.json.downgraded).toBe(0);
+    expect((await stat(file)).size).toBe(bytes);
+    expect(existsSync(`${file}.icc-backup.1`)).toBe(false);
+  });
+
+  test("hook_codex_worker_writes_log_line", async () => {
+    const dir = await tempDir();
+    const file = join(dir, "logged.jsonl");
+    const logFile = join(dir, "hook-codex.log");
+    await writeFile(file, rolloutContent());
+    const result = await runCli(["hook", "codex", "--sync", "--store", join(dir, "store")], { stdin: payloadFor(file), env: { ICC_LOG_FILE: logFile } });
+    expect(result.code).toBe(0);
+    const log = await readFile(logFile, "utf8");
+    expect(log).toContain("archived 1 historical image/document blocks");
   });
 });
