@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { createReadStream, createWriteStream, realpathSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { access, appendFile, copyFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -196,9 +196,20 @@ async function rescue(file, opts) {
       await unlink(temp).catch(() => {});
       throw new Error(`File changed while rescuing (another process may be writing it): ${file}. Nothing was modified; close the session and retry.`);
     }
+    // Move the original aside instead of copying it. Copying a multi-GB transcript
+    // takes long enough for the host to append more lines, and anything appended
+    // during that copy was silently dropped by the swap below (it only survived
+    // inside the backup). A rename is O(1), so the window between the check above
+    // and the swap is two directory operations, and a writer that still holds the
+    // old file open keeps writing into the backup rather than into an unlinked inode.
     const backup = await nextBackupPath(file);
-    await copyFile(file, backup);
-    await rename(temp, file);
+    await rename(file, backup);
+    try {
+      await rename(temp, file);
+    } catch (err) {
+      await rename(backup, file).catch(() => {});
+      throw err;
+    }
     const after = await stat(file);
     return { ...writeStats, backup, bytesAfter: after.size };
   } catch (err) {

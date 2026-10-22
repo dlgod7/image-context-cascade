@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { mkdtemp, open, readFile, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -97,6 +97,37 @@ describe("rescue CLI", () => {
     expect(result.json.backup).toBe(`${file}.icc-backup`);
     expect(await readFile(`${file}.icc-backup`, "utf8")).toBe(content);
     expect((await readFile(file, "utf8"))).toContain("omitted from this provider request");
+  });
+
+  test("rescue_backup_is_the_original_file_moved_aside_not_a_copy", async () => {
+    const dir = await tempDir();
+    const file = join(dir, "move.jsonl");
+    await writeFile(file, line({ role: "user", content: [anthropic("old")] }) + "\n" + line({ role: "user", content: [text("now")] }) + "\n");
+    const inoBefore = (await stat(file)).ino;
+    const result = await runRescue(file, ["--yes", "--json"]);
+    expect(result.code).toBe(0);
+    if (inoBefore !== 0) {
+      expect((await stat(`${file}.icc-backup`)).ino).toBe(inoBefore);
+      expect((await stat(file)).ino).not.toBe(inoBefore);
+    }
+  });
+
+  test("rescue_writes_from_a_still_open_handle_land_in_the_backup", async () => {
+    const dir = await tempDir();
+    const file = join(dir, "open.jsonl");
+    const content = line({ role: "user", content: [anthropic("old")] }) + "\n" + line({ role: "user", content: [text("now")] }) + "\n";
+    await writeFile(file, content);
+    const handle = await open(file, "a");
+    const late = line({ role: "user", content: [text("late")] }) + "\n";
+    try {
+      const result = await runRescue(file, ["--yes", "--json"]);
+      expect(result.code).toBe(0);
+      await handle.write(late);
+    } finally {
+      await handle.close();
+    }
+    expect(await readFile(`${file}.icc-backup`, "utf8")).toBe(content + late);
+    expect(await readFile(file, "utf8")).not.toContain("late");
   });
 
   test("rescue_idempotent_second_run_zero_downgrades", async () => {
