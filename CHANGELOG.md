@@ -2,6 +2,7 @@
 
 ## Unreleased (repo only — no package changes)
 
+- Fixed: `rescue` now moves the original aside with a rename instead of copying it before the swap. Copying a multi-GB transcript left a window in which lines appended by the host were silently dropped by the swap (they only survived in the backup); the rename is O(1), and a writer still holding the old file open now keeps writing into the backup. If the swap itself fails, the original is moved back.
 - Added: `image-cascade hook codex` — Codex `SessionEnd` hook entry point. Codex clamps hooks to 3 seconds and kills the process group on timeout, so the command hands the work to a detached worker (`__hook-codex-worker`, `detached: true` + `unref()`), which waits for the rollout file to settle and then rescues it. Fail-open: every path exits 0; `--sync` runs inline; log at `~/.image-cascade/hook-codex.log` (`ICC_LOG_FILE` overrides). Docs, README (both languages), and setup guide updated to Codex = automatic.
 - Added `docs/setup/`: per-host agent setup guides (Pi / Claude Code / Codex / generic) with an auto-detect entry point that can be pasted to any coding agent as a single raw URL.
 - Upgraded the Pi reference adapter to the full v0.2 feature set: `cascadeImagesAsync` + `fsSourceStore` (restorable placeholders, shared default store dir, `ICC_STORE_DIR` / `ICC_DISABLE` respected, fail-open try/catch). Previously it was sync-only with no store.
